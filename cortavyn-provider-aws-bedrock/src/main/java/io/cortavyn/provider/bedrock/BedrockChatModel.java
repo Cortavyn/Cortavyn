@@ -75,7 +75,7 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
             switch (message.role()) {
                 case SYSTEM -> system.add(SystemContentBlock.builder().text(message.content()).build());
                 case USER -> messages.add(Message.builder().role(ConversationRole.USER).content(content).build());
-                case ASSISTANT -> messages.add(Message.builder().role(ConversationRole.ASSISTANT).content(content).build());
+                case ASSISTANT -> messages.add(Message.builder().role(ConversationRole.ASSISTANT).content(toBedrockAssistantContent(message, content)).build());
                 case TOOL -> messages.add(Message.builder().role(ConversationRole.USER).content(ContentBlock.builder().toolResult(result -> result.toolUseId(message.toolCallId()).content(block -> block.text(message.content()))).build()).build());
             }
         }
@@ -131,6 +131,17 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
     private static String requireNonBlank(@Nullable String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
         return value;
+    }
+    private static List<ContentBlock> toBedrockAssistantContent(ChatMessage message, ContentBlock defaultContent) {
+        if (message.contentBlocks().stream().noneMatch(io.cortavyn.model.api.ReasoningContent.class::isInstance)) return List.of(defaultContent);
+        List<ContentBlock> blocks = new ArrayList<>();
+        for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
+            if (block instanceof io.cortavyn.model.api.ReasoningContent reasoning) {
+                Object signature = reasoning.providerState().get("signature");
+                blocks.add(ContentBlock.builder().reasoningContent(reasoningBlock -> reasoningBlock.reasoningText(reasoningText -> { reasoningText.text(reasoning.text()); if (signature instanceof String value && !value.isBlank()) reasoningText.signature(value); })).build());
+            } else if (block instanceof io.cortavyn.model.api.TextContent text) blocks.add(ContentBlock.builder().text(text.text()).build());
+        }
+        return blocks.isEmpty() ? List.of(defaultContent) : blocks;
     }
     private static java.util.Map<String, Document> toDocumentMap(java.util.Map<String, Object> values) { return values.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey, entry -> Document.fromString(String.valueOf(entry.getValue())))); }
     private static java.util.Map<String, Object> toObjectMap(java.util.Map<String, Document> values) { return values.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey, entry -> entry.getValue().toString())); }
