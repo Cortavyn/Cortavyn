@@ -37,9 +37,9 @@ class GeminiChatModelTest {
     }
 
     @Test
-    void keepsToolMessagesOutUntilPortableFunctionResponsesExist() {
+    void mapsToolResultsAsFunctionResponses() {
         var model = GeminiChatModel.builder().apiKey("test-key").build();
-        var request = new ChatRequest(List.of(new ChatMessage(ChatMessageRole.TOOL, "result")));
-        assertThrows(IllegalArgumentException.class, () -> model.toRequestJson(request));
+        var request = new ChatRequest(List.of(ChatMessage.toolResult("weather", "sunny")));
+        assertEquals("{\"contents\":[{\"role\":\"user\",\"parts\":[{\"functionResponse\":{\"name\":\"weather\",\"response\":{\"content\":\"sunny\"}}}]}]}", model.toRequestJson(request));
     }
 }

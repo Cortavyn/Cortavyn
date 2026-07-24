@@ -10,6 +10,10 @@ import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
+import io.cortavyn.model.api.ChatResponseMetadata;
+import io.cortavyn.model.api.TokenUsage;
+import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.ToolDefinition;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -77,9 +81,6 @@ public final class GeminiChatModel implements ChatModel {
         ArrayNode contents = root.putArray("contents");
         ArrayNode systemParts = null;
         for (ChatMessage message : request.messages()) {
-            if (message.role() == ChatMessageRole.TOOL) {
-                throw new IllegalArgumentException("TOOL messages require function-response metadata and are not supported yet");
-            }
             if (message.role() == ChatMessageRole.SYSTEM) {
                 if (systemParts == null) systemParts = root.putObject("systemInstruction").putArray("parts");
                 systemParts.addObject().put("text", message.content());
@@ -87,7 +88,8 @@ public final class GeminiChatModel implements ChatModel {
             }
             ObjectNode content = contents.addObject();
             content.put("role", message.role() == ChatMessageRole.ASSISTANT ? "model" : "user");
-            content.putArray("parts").addObject().put("text", message.content());
+            if (message.role() == ChatMessageRole.TOOL) content.putArray("parts").addObject().putObject("functionResponse").put("name", message.toolCallId()).putObject("response").put("content", message.content());
+            else content.putArray("parts").addObject().put("text", message.content());
         }
         if (contents.isEmpty()) throw new IllegalArgumentException("Gemini requires at least one non-system message");
         ObjectNode generationConfig = root.putObject("generationConfig");
@@ -97,6 +99,10 @@ public final class GeminiChatModel implements ChatModel {
         if (maxOutputTokens != null) generationConfig.put("maxOutputTokens", maxOutputTokens);
         if (!stopSequences.isEmpty()) generationConfig.putPOJO("stopSequences", stopSequences);
         if (generationConfig.isEmpty()) root.remove("generationConfig");
+        if (!request.tools().isEmpty()) {
+            ArrayNode declarations = root.putArray("tools").addObject().putArray("functionDeclarations");
+            for (ToolDefinition tool : request.tools()) { ObjectNode declaration = declarations.addObject(); declaration.put("name", tool.name()); declaration.put("description", tool.description()); declaration.putPOJO("parameters", tool.inputSchema()); }
+        }
         try {
             return JSON.writeValueAsString(root);
         } catch (JsonProcessingException exception) {
@@ -107,14 +113,17 @@ public final class GeminiChatModel implements ChatModel {
     private ChatResponse toChatResponse(HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) throw new GeminiHttpException(response.statusCode(), response.body());
         try {
-            JsonNode parts = JSON.readTree(response.body()).path("candidates").path(0).path("content").path("parts");
+            JsonNode root = JSON.readTree(response.body()); JsonNode candidate = root.path("candidates").path(0); JsonNode parts = candidate.path("content").path("parts");
             StringBuilder text = new StringBuilder();
+            List<ToolCall> toolCalls = new java.util.ArrayList<>();
             for (JsonNode part : parts) {
                 @Nullable String value = part.path("text").textValue();
                 if (value != null) text.append(value);
+                JsonNode call = part.path("functionCall"); if (!call.isMissingNode()) toolCalls.add(new ToolCall(call.path("id").asText(call.path("name").asText()), call.path("name").asText(), JSON.convertValue(call.path("args"), new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() { })));
             }
-            if (text.isEmpty()) throw new GeminiResponseException("Gemini returned no assistant message text");
-            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, text.toString()));
+            if (text.isEmpty() && toolCalls.isEmpty()) throw new GeminiResponseException("Gemini returned neither assistant text nor function calls");
+            JsonNode usage = root.path("usageMetadata"); TokenUsage tokens = usage.isMissingNode() ? null : new TokenUsage(usage.path("promptTokenCount").asInt(), usage.path("candidatesTokenCount").asInt(), usage.path("totalTokenCount").asInt());
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, text.toString(), List.of(new io.cortavyn.model.api.TextContent(text.toString())), null, toolCalls), new ChatResponseMetadata(modelName, response.headers().firstValue("x-request-id").orElse(null), candidate.path("finishReason").textValue(), tokens), java.util.Map.of());
         } catch (JsonProcessingException exception) {
             throw new GeminiResponseException("Gemini returned an invalid JSON response", exception);
         }
