@@ -32,6 +32,7 @@
         <module>cortavyn-provider-anthropic</module>
         <module>cortavyn-provider-ollama</module>
         <module>cortavyn-provider-openai-compatible</module>
+        <module>cortavyn-provider-openrouter</module>
         <module>examples</module>
     </modules>
 

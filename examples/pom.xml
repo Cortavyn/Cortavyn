@@ -9,5 +9,6 @@
         <module>openai-chat</module>
         <module>mistral-chat</module>
         <module>gemini-chat</module>
+        <module>openrouter-chat</module>
     </modules>
 </project>
