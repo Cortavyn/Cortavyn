@@ -38,10 +38,12 @@ MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-chat -am package -Prun-exa
 GEMINI_API_KEY=... mvn -pl :cortavyn-example-gemini-chat -am package -Prun-example
 OPENROUTER_API_KEY=... mvn -pl :cortavyn-example-openrouter-chat -am package -Prun-example
 AZURE_OPENAI_ENDPOINT=... AZURE_OPENAI_API_KEY=... AZURE_OPENAI_DEPLOYMENT=... AZURE_OPENAI_API_VERSION=... mvn -pl :cortavyn-example-azure-openai-chat -am package -Prun-example
+AWS_BEDROCK_MODEL=... mvn -pl :cortavyn-example-aws-bedrock-chat -am package -Prun-example
 ```
 
 Pass a prompt as Maven property with `-Dexample.prompt="Explain durable agents in one sentence."`. The OpenAI example also accepts `OPENAI_MODEL`; Mistral uses the provider default unless `MISTRAL_MODEL` is set. The Gemini example follows LangChain's environment convention: `GOOGLE_API_KEY` takes precedence over `GEMINI_API_KEY`, and `GEMINI_MODEL` overrides its `gemini-2.5-flash` default.
 OpenRouter uses `OPENROUTER_MODEL` to choose a catalog model, plus optional `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` for application attribution.
+Bedrock uses the AWS SDK default credential and region provider chains; set `AWS_BEDROCK_MODEL` to a model ID available in the selected region.
 
 ## License
 
