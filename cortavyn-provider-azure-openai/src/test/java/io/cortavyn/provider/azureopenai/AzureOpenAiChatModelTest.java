@@ -23,6 +23,7 @@ class AzureOpenAiChatModelTest {
                 .deploymentName("gpt-4.1")
                 .apiVersion("2025-04-01-preview")
                 .maxTokens(120)
+                .reasoningEffort("medium")
                 .build();
 
         var json = JSON.readTree(model.toRequestJson(new ChatRequest(List.of(
@@ -30,6 +31,7 @@ class AzureOpenAiChatModelTest {
                 new ChatMessage(ChatMessageRole.USER, "Hello")))));
 
         assertEquals(120, json.path("max_completion_tokens").asInt());
+        assertEquals("medium", json.path("reasoning_effort").asText());
         assertEquals("system", json.path("messages").path(0).path("role").asText());
         assertEquals("Hello", json.path("messages").path(1).path("content").asText());
     }

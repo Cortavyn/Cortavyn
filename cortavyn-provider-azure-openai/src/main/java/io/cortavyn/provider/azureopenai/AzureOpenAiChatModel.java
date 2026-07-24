@@ -38,7 +38,7 @@ public final class AzureOpenAiChatModel implements ChatModel {
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
     private static final Set<String> RESERVED_PARAMETERS = Set.of(
             "messages", "temperature", "max_completion_tokens", "top_p", "frequency_penalty",
-            "presence_penalty", "seed", "stop");
+            "presence_penalty", "seed", "stop", "reasoning_effort");
 
     private final HttpClient httpClient;
     private final URI chatCompletionsUri;
@@ -51,6 +51,7 @@ public final class AzureOpenAiChatModel implements ChatModel {
     private final @Nullable Double presencePenalty;
     private final @Nullable Integer seed;
     private final List<String> stopSequences;
+    private final @Nullable String reasoningEffort;
     private final Map<String, Object> additionalParameters;
 
     private AzureOpenAiChatModel(Builder builder) {
@@ -69,6 +70,7 @@ public final class AzureOpenAiChatModel implements ChatModel {
         presencePenalty = builder.presencePenalty;
         seed = builder.seed;
         stopSequences = builder.stopSequences == null ? List.of() : List.copyOf(builder.stopSequences);
+        reasoningEffort = builder.reasoningEffort;
         additionalParameters = Map.copyOf(builder.additionalParameters);
         validate();
     }
@@ -98,6 +100,7 @@ public final class AzureOpenAiChatModel implements ChatModel {
         if (presencePenalty != null) root.put("presence_penalty", presencePenalty);
         if (seed != null) root.put("seed", seed);
         if (!stopSequences.isEmpty()) root.putPOJO("stop", stopSequences);
+        if (reasoningEffort != null) root.put("reasoning_effort", reasoningEffort);
         if (!request.tools().isEmpty()) { ArrayNode tools = root.putArray("tools"); for (ToolDefinition tool : request.tools()) { ObjectNode function = tools.addObject().put("type", "function").putObject("function"); function.put("name", tool.name()); function.put("description", tool.description()); function.putPOJO("parameters", tool.inputSchema()); } }
         additionalParameters.forEach(root::putPOJO);
         ArrayNode messages = root.putArray("messages");
@@ -165,6 +168,7 @@ public final class AzureOpenAiChatModel implements ChatModel {
         private @Nullable Double presencePenalty;
         private @Nullable Integer seed;
         private @Nullable List<String> stopSequences;
+        private @Nullable String reasoningEffort;
         private Map<String, Object> additionalParameters = Map.of();
         private Builder() { }
         public Builder httpClient(HttpClient value) { httpClient = Objects.requireNonNull(value); return this; }
@@ -180,6 +184,8 @@ public final class AzureOpenAiChatModel implements ChatModel {
         public Builder presencePenalty(double value) { presencePenalty = value; return this; }
         public Builder seed(int value) { seed = value; return this; }
         public Builder stopSequences(List<String> value) { stopSequences = List.copyOf(value); return this; }
+        /** Sets the reasoning effort for Azure OpenAI reasoning deployments. */
+        public Builder reasoningEffort(String value) { reasoningEffort = requireNonBlank(value, "reasoningEffort"); return this; }
         public Builder additionalParameters(Map<String, Object> value) { additionalParameters = Map.copyOf(value); return this; }
         public AzureOpenAiChatModel build() { return new AzureOpenAiChatModel(this); }
     }
