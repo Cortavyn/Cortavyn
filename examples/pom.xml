@@ -10,6 +10,7 @@
         <module>mistral-chat</module>
         <module>gemini-chat</module>
         <module>openrouter-chat</module>
+        <module>anthropic-chat</module>
         <module>azure-openai-chat</module>
         <module>aws-bedrock-chat</module>
     </modules>
