@@ -45,6 +45,7 @@ public final class MistralChatModel implements ChatModel {
     private final List<String> stopSequences;
     private final @Nullable Integer randomSeed;
     private final @Nullable Boolean safePrompt;
+    private final @Nullable String reasoningEffort;
     private final Map<String, Object> additionalParameters;
 
     private MistralChatModel(Builder builder) {
@@ -59,6 +60,7 @@ public final class MistralChatModel implements ChatModel {
         this.stopSequences = builder.stopSequences == null ? List.of() : List.copyOf(builder.stopSequences);
         this.randomSeed = builder.randomSeed;
         this.safePrompt = builder.safePrompt;
+        this.reasoningEffort = builder.reasoningEffort;
         this.additionalParameters = Map.copyOf(builder.additionalParameters);
         if (timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("timeout must be positive");
         if (temperature < 0 || temperature > 1) throw new IllegalArgumentException("temperature must be in [0.0, 1.0]");
@@ -97,6 +99,7 @@ public final class MistralChatModel implements ChatModel {
         if (!stopSequences.isEmpty()) root.putPOJO("stop", stopSequences);
         if (randomSeed != null) root.put("random_seed", randomSeed);
         if (safePrompt != null) root.put("safe_prompt", safePrompt);
+        if (reasoningEffort != null) root.put("reasoning_effort", reasoningEffort);
         additionalParameters.forEach(root::putPOJO);
         if (!request.tools().isEmpty()) { ArrayNode tools = root.putArray("tools"); for (ToolDefinition tool : request.tools()) { ObjectNode function = tools.addObject().put("type", "function").putObject("function"); function.put("name", tool.name()); function.put("description", tool.description()); function.putPOJO("parameters", tool.inputSchema()); } }
 
@@ -141,7 +144,7 @@ public final class MistralChatModel implements ChatModel {
     }
 
     private static final java.util.Set<String> RESERVED_PARAMETERS = java.util.Set.of(
-            "model", "messages", "temperature", "top_p", "max_tokens", "stop", "random_seed", "safe_prompt");
+            "model", "messages", "temperature", "top_p", "max_tokens", "stop", "random_seed", "safe_prompt", "reasoning_effort");
 
     public static final class Builder {
         private @Nullable HttpClient httpClient;
@@ -155,6 +158,7 @@ public final class MistralChatModel implements ChatModel {
         private @Nullable List<String> stopSequences;
         private @Nullable Integer randomSeed;
         private @Nullable Boolean safePrompt;
+        private @Nullable String reasoningEffort;
         private Map<String, Object> additionalParameters = Map.of();
 
         private Builder() {
@@ -171,6 +175,8 @@ public final class MistralChatModel implements ChatModel {
         public Builder stopSequences(List<String> stopSequences) { this.stopSequences = List.copyOf(stopSequences); return this; }
         public Builder randomSeed(int randomSeed) { this.randomSeed = randomSeed; return this; }
         public Builder safePrompt(boolean safePrompt) { this.safePrompt = safePrompt; return this; }
+        /** Sets Mistral's reasoning effort, for example {@code high} or {@code none}. */
+        public Builder reasoningEffort(String reasoningEffort) { this.reasoningEffort = requireNonBlank(reasoningEffort, "reasoningEffort"); return this; }
         public Builder additionalParameters(Map<String, Object> additionalParameters) { this.additionalParameters = Map.copyOf(additionalParameters); return this; }
         public MistralChatModel build() { return new MistralChatModel(this); }
     }

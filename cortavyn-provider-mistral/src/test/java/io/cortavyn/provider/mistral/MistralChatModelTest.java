@@ -18,12 +18,13 @@ class MistralChatModelTest {
                 .maxTokens(64)
                 .randomSeed(7)
                 .safePrompt(true)
+                .reasoningEffort("high")
                 .additionalParameters(Map.of("presence_penalty", 0.1))
                 .build();
 
         String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, "Hello"))));
 
-        assertEquals("{\"model\":\"mistral-small\",\"temperature\":0.7,\"top_p\":1.0,\"max_tokens\":64,\"random_seed\":7,\"safe_prompt\":true,\"presence_penalty\":0.1,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}", payload);
+        assertEquals("{\"model\":\"mistral-small\",\"temperature\":0.7,\"top_p\":1.0,\"max_tokens\":64,\"random_seed\":7,\"safe_prompt\":true,\"reasoning_effort\":\"high\",\"presence_penalty\":0.1,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}", payload);
     }
 
     @Test
