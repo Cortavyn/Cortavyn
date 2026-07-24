@@ -36,6 +36,7 @@
         <module>cortavyn-provider-deepseek</module>
         <module>cortavyn-provider-xai</module>
         <module>cortavyn-provider-moonshot</module>
+        <module>cortavyn-provider-qwen</module>
         <module>cortavyn-provider-openrouter</module>
         <module>cortavyn-provider-azure-openai</module>
         <module>cortavyn-provider-aws-bedrock</module>
