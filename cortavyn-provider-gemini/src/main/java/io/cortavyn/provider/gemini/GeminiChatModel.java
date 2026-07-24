@@ -14,6 +14,7 @@ import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import io.cortavyn.model.api.ReasoningContent;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -116,14 +117,17 @@ public final class GeminiChatModel implements ChatModel {
             JsonNode root = JSON.readTree(response.body()); JsonNode candidate = root.path("candidates").path(0); JsonNode parts = candidate.path("content").path("parts");
             StringBuilder text = new StringBuilder();
             List<ToolCall> toolCalls = new java.util.ArrayList<>();
+            List<io.cortavyn.model.api.ChatContent> blocks = new java.util.ArrayList<>();
             for (JsonNode part : parts) {
                 @Nullable String value = part.path("text").textValue();
                 if (value != null) text.append(value);
+                if (part.path("thought").asBoolean(false) && value != null) blocks.add(new ReasoningContent(value, java.util.Map.of("thoughtSignature", part.path("thoughtSignature").asText())));
                 JsonNode call = part.path("functionCall"); if (!call.isMissingNode()) toolCalls.add(new ToolCall(call.path("id").asText(call.path("name").asText()), call.path("name").asText(), JSON.convertValue(call.path("args"), new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() { })));
             }
             if (text.isEmpty() && toolCalls.isEmpty()) throw new GeminiResponseException("Gemini returned neither assistant text nor function calls");
             JsonNode usage = root.path("usageMetadata"); TokenUsage tokens = usage.isMissingNode() ? null : new TokenUsage(usage.path("promptTokenCount").asInt(), usage.path("candidatesTokenCount").asInt(), usage.path("totalTokenCount").asInt());
-            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, text.toString(), List.of(new io.cortavyn.model.api.TextContent(text.toString())), null, toolCalls), new ChatResponseMetadata(modelName, response.headers().firstValue("x-request-id").orElse(null), candidate.path("finishReason").textValue(), tokens), java.util.Map.of());
+            blocks.addFirst(new io.cortavyn.model.api.TextContent(text.toString()));
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, text.toString(), blocks, null, toolCalls), new ChatResponseMetadata(modelName, response.headers().firstValue("x-request-id").orElse(null), candidate.path("finishReason").textValue(), tokens), java.util.Map.of());
         } catch (JsonProcessingException exception) {
             throw new GeminiResponseException("Gemini returned an invalid JSON response", exception);
         }
