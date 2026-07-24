@@ -33,9 +33,9 @@ class MistralChatModelTest {
     }
 
     @Test
-    void keepsToolMessagesOutUntilPortableToolCallIdsExist() {
+    void mapsToolResultsWithToolCallIds() {
         var model = MistralChatModel.builder().apiKey("test-key").build();
-        var request = new ChatRequest(List.of(new ChatMessage(ChatMessageRole.TOOL, "result")));
-        assertThrows(IllegalArgumentException.class, () -> model.toRequestJson(request));
+        var request = new ChatRequest(List.of(ChatMessage.toolResult("call_1", "result")));
+        assertEquals(true, model.toRequestJson(request).contains("\"tool_call_id\":\"call_1\""));
     }
 }
