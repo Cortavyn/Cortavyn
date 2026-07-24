@@ -90,7 +90,13 @@ public final class GeminiChatModel implements ChatModel {
             ObjectNode content = contents.addObject();
             content.put("role", message.role() == ChatMessageRole.ASSISTANT ? "model" : "user");
             if (message.role() == ChatMessageRole.TOOL) content.putArray("parts").addObject().putObject("functionResponse").put("name", message.toolCallId()).putObject("response").put("content", message.content());
-            else content.putArray("parts").addObject().put("text", message.content());
+            else if (message.role() == ChatMessageRole.ASSISTANT && message.contentBlocks().stream().anyMatch(io.cortavyn.model.api.ReasoningContent.class::isInstance)) {
+                ArrayNode parts = content.putArray("parts");
+                for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
+                    if (block instanceof io.cortavyn.model.api.ReasoningContent reasoning) { ObjectNode thought = parts.addObject().put("text", reasoning.text()).put("thought", true); Object signature = reasoning.providerState().get("thoughtSignature"); if (signature instanceof String value && !value.isBlank()) thought.put("thoughtSignature", value); }
+                    else if (block instanceof io.cortavyn.model.api.TextContent text) parts.addObject().put("text", text.text());
+                }
+            } else content.putArray("parts").addObject().put("text", message.content());
         }
         if (contents.isEmpty()) throw new IllegalArgumentException("Gemini requires at least one non-system message");
         ObjectNode generationConfig = root.putObject("generationConfig");
