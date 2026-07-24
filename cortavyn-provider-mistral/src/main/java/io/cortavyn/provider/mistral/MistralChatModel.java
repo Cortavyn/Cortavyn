@@ -14,6 +14,7 @@ import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import io.cortavyn.model.api.ReasoningContent;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -122,7 +123,8 @@ public final class MistralChatModel implements ChatModel {
             List<ToolCall> calls = new java.util.ArrayList<>(); for (JsonNode call : message.path("tool_calls")) { String arguments = call.path("function").path("arguments").asText("{}"); calls.add(new ToolCall(call.path("id").asText(), call.path("function").path("name").asText(), JSON.readValue(arguments, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { }))); }
             if (content.isEmpty() && calls.isEmpty()) throw new MistralResponseException("Mistral returned no assistant text or tool calls");
             JsonNode usage = root.path("usage"); TokenUsage tokens = usage.isMissingNode() ? null : new TokenUsage(usage.path("prompt_tokens").asInt(), usage.path("completion_tokens").asInt(), usage.path("total_tokens").asInt());
-            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content, List.of(new io.cortavyn.model.api.TextContent(content)), null, calls), new ChatResponseMetadata(root.path("model").textValue(), response.headers().firstValue("x-request-id").orElse(null), choice.path("finish_reason").textValue(), tokens), Map.of());
+            List<io.cortavyn.model.api.ChatContent> blocks = new java.util.ArrayList<>(); blocks.add(new io.cortavyn.model.api.TextContent(content)); @Nullable String reasoning = message.path("reasoning_content").textValue(); if (reasoning != null) blocks.add(new ReasoningContent(reasoning));
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content, blocks, null, calls), new ChatResponseMetadata(root.path("model").textValue(), response.headers().firstValue("x-request-id").orElse(null), choice.path("finish_reason").textValue(), tokens), Map.of());
         } catch (JsonProcessingException exception) {
             throw new MistralResponseException("Mistral returned an invalid JSON response", exception);
         }
