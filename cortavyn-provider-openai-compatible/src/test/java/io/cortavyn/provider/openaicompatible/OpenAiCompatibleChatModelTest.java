@@ -1,0 +1,32 @@
+package io.cortavyn.provider.openaicompatible;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.cortavyn.model.api.ChatMessage;
+import io.cortavyn.model.api.ChatMessageRole;
+import io.cortavyn.model.api.ChatRequest;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+@org.jspecify.annotations.NullMarked
+class OpenAiCompatibleChatModelTest {
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    @Test
+    void serializesStandardChatCompletionsRequest() throws Exception {
+        var model = OpenAiCompatibleChatModel.builder().baseUrl("https://example.test/v1")
+                .apiKey("token").modelName("model").temperature(0.2).maxTokens(42).build();
+        var json = JSON.readTree(model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, "Hello")))));
+        assertEquals("model", json.path("model").asText());
+        assertEquals(42, json.path("max_tokens").asInt());
+        assertEquals("Hello", json.path("messages").path(0).path("content").asText());
+    }
+
+    @Test
+    void rejectsToolMessagesUntilThePortableApiHasToolCallIdentifiers() {
+        var model = OpenAiCompatibleChatModel.builder().baseUrl("https://example.test/v1").apiKey("token").modelName("model").build();
+        assertThrows(IllegalArgumentException.class, () -> model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.TOOL, "result")))));
+    }
+}
