@@ -119,7 +119,8 @@ public final class OpenAiChatModel implements ChatModel {
             JsonNode usage = JSON.readTree(response.body()).path("usage");
             TokenUsage tokenUsage = usage.isMissingNode() ? null : new TokenUsage(usage.path("prompt_tokens").asInt(), usage.path("completion_tokens").asInt(), usage.path("total_tokens").asInt());
             ChatResponseMetadata metadata = new ChatResponseMetadata(JSON.readTree(response.body()).path("model").textValue(), response.headers().firstValue("x-request-id").orElse(null), choice.path("finish_reason").textValue(), tokenUsage);
-            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content, List.of(new io.cortavyn.model.api.TextContent(content)), null, toolCalls), metadata, Map.of());
+            List<io.cortavyn.model.api.ChatContent> blocks = new java.util.ArrayList<>(); blocks.add(new io.cortavyn.model.api.TextContent(content)); @Nullable String reasoning = message.path("reasoning_content").textValue(); if (reasoning != null) blocks.add(new io.cortavyn.model.api.ReasoningContent(reasoning));
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content, blocks, null, toolCalls), metadata, Map.of());
         } catch (JsonProcessingException exception) {
             throw new OpenAiResponseException("OpenAI returned an invalid JSON response", exception);
         }
