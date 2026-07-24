@@ -23,11 +23,11 @@ class OpenAiChatModelTest {
     }
 
     @Test
-    void rejectsToolMessagesUntilThePortableApiCanExpressToolCallIds() {
+    void mapsToolResultsWithTheirToolCallId() {
         var model = OpenAiChatModel.builder().apiKey("test-key").modelName("gpt-test").build();
-        var request = new ChatRequest(List.of(new ChatMessage(ChatMessageRole.TOOL, "result")));
+        var request = new ChatRequest(List.of(ChatMessage.toolResult("call_123", "result")));
 
-        assertThrows(IllegalArgumentException.class, () -> model.toRequestJson(request));
+        assertEquals("{\"model\":\"gpt-test\",\"messages\":[{\"role\":\"tool\",\"content\":\"result\",\"tool_call_id\":\"call_123\"}]}", model.toRequestJson(request));
     }
 
     @Test

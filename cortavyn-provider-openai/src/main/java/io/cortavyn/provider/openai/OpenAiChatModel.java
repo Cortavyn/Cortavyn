@@ -10,6 +10,10 @@ import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
+import io.cortavyn.model.api.ChatResponseMetadata;
+import io.cortavyn.model.api.TokenUsage;
+import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.ToolDefinition;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -100,11 +104,22 @@ public final class OpenAiChatModel implements ChatModel {
         }
         try {
             JsonNode choice = JSON.readTree(response.body()).path("choices").path(0);
-            @Nullable String content = choice.path("message").path("content").textValue();
-            if (content == null) {
-                throw new OpenAiResponseException("OpenAI returned no assistant message content");
+            JsonNode message = choice.path("message");
+            @Nullable String content = message.path("content").textValue();
+            if (content == null) content = "";
+            List<ToolCall> toolCalls = new java.util.ArrayList<>();
+            for (JsonNode call : message.path("tool_calls")) {
+                String id = call.path("id").asText();
+                String name = call.path("function").path("name").asText();
+                String arguments = call.path("function").path("arguments").asText("{}");
+                try { toolCalls.add(new ToolCall(id, name, JSON.readValue(arguments, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { }))); }
+                catch (JsonProcessingException exception) { throw new OpenAiResponseException("OpenAI returned invalid tool-call arguments", exception); }
             }
-            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content));
+            if (content.isEmpty() && toolCalls.isEmpty()) throw new OpenAiResponseException("OpenAI returned neither assistant content nor tool calls");
+            JsonNode usage = JSON.readTree(response.body()).path("usage");
+            TokenUsage tokenUsage = usage.isMissingNode() ? null : new TokenUsage(usage.path("prompt_tokens").asInt(), usage.path("completion_tokens").asInt(), usage.path("total_tokens").asInt());
+            ChatResponseMetadata metadata = new ChatResponseMetadata(JSON.readTree(response.body()).path("model").textValue(), response.headers().firstValue("x-request-id").orElse(null), choice.path("finish_reason").textValue(), tokenUsage);
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content, List.of(new io.cortavyn.model.api.TextContent(content)), null, toolCalls), metadata, Map.of());
         } catch (JsonProcessingException exception) {
             throw new OpenAiResponseException("OpenAI returned an invalid JSON response", exception);
         }
@@ -120,15 +135,22 @@ public final class OpenAiChatModel implements ChatModel {
         if (presencePenalty != null) root.put("presence_penalty", presencePenalty);
         if (seed != null) root.put("seed", seed);
         if (!stopSequences.isEmpty()) root.putPOJO("stop", stopSequences);
+        if (!request.tools().isEmpty()) {
+            ArrayNode tools = root.putArray("tools");
+            for (ToolDefinition tool : request.tools()) {
+                ObjectNode function = tools.addObject().put("type", "function").putObject("function");
+                function.put("name", tool.name());
+                function.put("description", tool.description());
+                function.putPOJO("parameters", tool.inputSchema());
+            }
+        }
         additionalParameters.forEach(root::putPOJO);
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {
-            if (message.role() == ChatMessageRole.TOOL) {
-                throw new IllegalArgumentException("TOOL messages require tool-call identifiers and are not supported yet");
-            }
             ObjectNode wireMessage = messages.addObject();
             wireMessage.put("role", message.role().name().toLowerCase(Locale.ROOT));
             wireMessage.put("content", message.content());
+            if (message.role() == ChatMessageRole.TOOL) wireMessage.put("tool_call_id", message.toolCallId());
         }
         try {
             return JSON.writeValueAsString(root);
