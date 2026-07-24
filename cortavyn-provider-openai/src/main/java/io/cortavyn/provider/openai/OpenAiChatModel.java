@@ -16,7 +16,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletionStage;
 import org.jspecify.annotations.Nullable;
 
@@ -36,6 +39,14 @@ public final class OpenAiChatModel implements ChatModel {
     private final String apiKey;
     private final String modelName;
     private final Duration timeout;
+    private final @Nullable Double temperature;
+    private final @Nullable Integer maxTokens;
+    private final @Nullable Double topP;
+    private final @Nullable Double frequencyPenalty;
+    private final @Nullable Double presencePenalty;
+    private final @Nullable Integer seed;
+    private final List<String> stopSequences;
+    private final Map<String, Object> additionalParameters;
 
     private OpenAiChatModel(Builder builder) {
         this.httpClient = builder.httpClient == null ? HttpClient.newHttpClient() : builder.httpClient;
@@ -43,9 +54,25 @@ public final class OpenAiChatModel implements ChatModel {
         this.apiKey = requireNonBlank(builder.apiKey, "apiKey");
         this.modelName = requireNonBlank(builder.modelName, "modelName");
         this.timeout = builder.timeout == null ? DEFAULT_TIMEOUT : builder.timeout;
+        this.temperature = builder.temperature;
+        this.maxTokens = builder.maxTokens;
+        this.topP = builder.topP;
+        this.frequencyPenalty = builder.frequencyPenalty;
+        this.presencePenalty = builder.presencePenalty;
+        this.seed = builder.seed;
+        this.stopSequences = builder.stopSequences == null ? List.of() : List.copyOf(builder.stopSequences);
+        this.additionalParameters = Map.copyOf(builder.additionalParameters);
         if (timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("timeout must be positive");
         }
+        if (temperature != null && (temperature < 0 || temperature > 2)) throw new IllegalArgumentException("temperature must be in [0.0, 2.0]");
+        if (maxTokens != null && maxTokens <= 0) throw new IllegalArgumentException("maxTokens must be positive");
+        if (topP != null && (topP < 0 || topP > 1)) throw new IllegalArgumentException("topP must be in [0.0, 1.0]");
+        if (frequencyPenalty != null && (frequencyPenalty < -2 || frequencyPenalty > 2)) throw new IllegalArgumentException("frequencyPenalty must be in [-2.0, 2.0]");
+        if (presencePenalty != null && (presencePenalty < -2 || presencePenalty > 2)) throw new IllegalArgumentException("presencePenalty must be in [-2.0, 2.0]");
+        additionalParameters.keySet().forEach(key -> {
+            if (RESERVED_PARAMETERS.contains(key)) throw new IllegalArgumentException("additionalParameters must not override " + key);
+        });
     }
 
     public static Builder builder() {
@@ -86,6 +113,14 @@ public final class OpenAiChatModel implements ChatModel {
     String toRequestJson(ChatRequest request) {
         ObjectNode root = JSON.createObjectNode();
         root.put("model", modelName);
+        if (temperature != null) root.put("temperature", temperature);
+        if (maxTokens != null) root.put("max_tokens", maxTokens);
+        if (topP != null) root.put("top_p", topP);
+        if (frequencyPenalty != null) root.put("frequency_penalty", frequencyPenalty);
+        if (presencePenalty != null) root.put("presence_penalty", presencePenalty);
+        if (seed != null) root.put("seed", seed);
+        if (!stopSequences.isEmpty()) root.putPOJO("stop", stopSequences);
+        additionalParameters.forEach(root::putPOJO);
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {
             if (message.role() == ChatMessageRole.TOOL) {
@@ -114,12 +149,23 @@ public final class OpenAiChatModel implements ChatModel {
         return value;
     }
 
+    private static final Set<String> RESERVED_PARAMETERS = Set.of(
+            "model", "messages", "temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty", "seed", "stop");
+
     public static final class Builder {
         private @Nullable HttpClient httpClient;
         private @Nullable URI baseUrl;
         private @Nullable String apiKey;
         private @Nullable String modelName;
         private @Nullable Duration timeout;
+        private @Nullable Double temperature;
+        private @Nullable Integer maxTokens;
+        private @Nullable Double topP;
+        private @Nullable Double frequencyPenalty;
+        private @Nullable Double presencePenalty;
+        private @Nullable Integer seed;
+        private @Nullable List<String> stopSequences;
+        private Map<String, Object> additionalParameters = Map.of();
 
         private Builder() {
         }
@@ -148,6 +194,15 @@ public final class OpenAiChatModel implements ChatModel {
             this.timeout = timeout;
             return this;
         }
+
+        public Builder temperature(double temperature) { this.temperature = temperature; return this; }
+        public Builder maxTokens(int maxTokens) { this.maxTokens = maxTokens; return this; }
+        public Builder topP(double topP) { this.topP = topP; return this; }
+        public Builder frequencyPenalty(double frequencyPenalty) { this.frequencyPenalty = frequencyPenalty; return this; }
+        public Builder presencePenalty(double presencePenalty) { this.presencePenalty = presencePenalty; return this; }
+        public Builder seed(int seed) { this.seed = seed; return this; }
+        public Builder stopSequences(List<String> stopSequences) { this.stopSequences = List.copyOf(stopSequences); return this; }
+        public Builder additionalParameters(Map<String, Object> additionalParameters) { this.additionalParameters = Map.copyOf(additionalParameters); return this; }
 
         public OpenAiChatModel build() {
             return new OpenAiChatModel(this);
