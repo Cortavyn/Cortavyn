@@ -10,6 +10,7 @@ import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
 import io.cortavyn.model.api.ChatResponseMetadata;
+import io.cortavyn.model.api.ReasoningContent;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
@@ -37,6 +38,8 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
     private final @Nullable Double temperature;
     private final @Nullable Integer maxTokens;
     private final Map<String, String> headers;
+    private final Map<String, Object> additionalParameters;
+    private final boolean preserveReasoningContent;
 
     private OpenAiCompatibleChatModel(Builder b) {
         httpClient = b.httpClient == null ? HttpClient.newHttpClient() : b.httpClient;
@@ -48,6 +51,8 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
         temperature = b.temperature;
         maxTokens = b.maxTokens;
         headers = Map.copyOf(b.headers);
+        additionalParameters = Map.copyOf(b.additionalParameters);
+        preserveReasoningContent = b.preserveReasoningContent;
         if (timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("timeout must be positive");
         if (temperature != null && (temperature < 0 || temperature > 2)) throw new IllegalArgumentException("temperature must be in [0.0, 2.0]");
         if (maxTokens != null && maxTokens <= 0) throw new IllegalArgumentException("maxTokens must be positive");
@@ -66,10 +71,20 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
         if (temperature != null) root.put("temperature", temperature);
         if (maxTokens != null) root.put("max_tokens", maxTokens);
         if (!request.tools().isEmpty()) { ArrayNode tools = root.putArray("tools"); for (ToolDefinition tool : request.tools()) { ObjectNode function = tools.addObject().put("type", "function").putObject("function"); function.put("name", tool.name()); function.put("description", tool.description()); function.putPOJO("parameters", tool.inputSchema()); } }
+        additionalParameters.forEach(root::putPOJO);
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {
             ObjectNode wire = messages.addObject().put("role", message.role().name().toLowerCase(Locale.ROOT)).put("content", message.content());
             if (message.role() == ChatMessageRole.TOOL) wire.put("tool_call_id", message.toolCallId());
+            if (preserveReasoningContent && message.role() == ChatMessageRole.ASSISTANT) {
+                message.contentBlocks().stream()
+                        .filter(ReasoningContent.class::isInstance)
+                        .map(ReasoningContent.class::cast)
+                        .map(ReasoningContent::text)
+                        .filter(reasoning -> !reasoning.isBlank())
+                        .findFirst()
+                        .ifPresent(reasoning -> wire.put("reasoning_content", reasoning));
+            }
         }
         try { return JSON.writeValueAsString(root); }
         catch (JsonProcessingException e) { throw new IllegalStateException("Unable to serialize chat request", e); }
@@ -91,6 +106,7 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
     public static final class Builder {
         private @Nullable HttpClient httpClient; private @Nullable String baseUrl; private @Nullable String apiKey; private @Nullable String modelName;
         private @Nullable Duration timeout; private @Nullable Double temperature; private @Nullable Integer maxTokens; private Map<String, String> headers = Map.of();
+        private Map<String, Object> additionalParameters = Map.of(); private boolean preserveReasoningContent;
         private Builder() { }
         public Builder httpClient(HttpClient value) { httpClient = Objects.requireNonNull(value); return this; }
         public Builder baseUrl(String value) { baseUrl = value; return this; }
@@ -100,6 +116,9 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
         public Builder temperature(double value) { temperature = value; return this; }
         public Builder maxTokens(int value) { maxTokens = value; return this; }
         public Builder headers(Map<String, String> value) { headers = Map.copyOf(value); return this; }
+        public Builder additionalParameters(Map<String, Object> value) { additionalParameters = Map.copyOf(value); return this; }
+        /** Replays assistant reasoning on subsequent requests for compatible APIs that require it. */
+        public Builder preserveReasoningContent(boolean value) { preserveReasoningContent = value; return this; }
         public OpenAiCompatibleChatModel build() { return new OpenAiCompatibleChatModel(this); }
     }
 }

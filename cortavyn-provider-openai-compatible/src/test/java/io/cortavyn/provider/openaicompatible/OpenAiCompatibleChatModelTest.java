@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.model.api.ReasoningContent;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -28,5 +29,16 @@ class OpenAiCompatibleChatModelTest {
         var model = OpenAiCompatibleChatModel.builder().baseUrl("https://example.test/v1").apiKey("token").modelName("model").build();
         var json = JSON.readTree(model.toRequestJson(new ChatRequest(List.of(ChatMessage.toolResult("call_1", "result")))));
         assertEquals("call_1", json.path("messages").path(0).path("tool_call_id").asText());
+    }
+
+    @Test
+    void canReplayReasoningForProvidersThatRequireIt() throws Exception {
+        var model = OpenAiCompatibleChatModel.builder().baseUrl("https://example.test/v1")
+                .apiKey("token").modelName("model").preserveReasoningContent(true).build();
+        var assistant = new ChatMessage(ChatMessageRole.ASSISTANT, List.of(new ReasoningContent("Need a tool.")));
+
+        var json = JSON.readTree(model.toRequestJson(new ChatRequest(List.of(assistant))));
+
+        assertEquals("Need a tool.", json.path("messages").path(0).path("reasoning_content").asText());
     }
 }
