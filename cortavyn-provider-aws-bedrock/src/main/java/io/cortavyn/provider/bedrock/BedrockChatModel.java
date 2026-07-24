@@ -9,6 +9,7 @@ import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import io.cortavyn.model.api.ReasoningContent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -104,14 +105,17 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
         }
         StringBuilder content = new StringBuilder();
         List<ToolCall> toolCalls = new ArrayList<>();
+        List<io.cortavyn.model.api.ChatContent> blocks = new ArrayList<>();
         for (ContentBlock block : response.output().message().content()) {
             if (block.text() != null) content.append(block.text());
+            if (block.reasoningContent() != null && block.reasoningContent().reasoningText() != null) { String signature = block.reasoningContent().reasoningText().signature(); blocks.add(new ReasoningContent(block.reasoningContent().reasoningText().text(), signature == null ? java.util.Map.of() : java.util.Map.of("signature", signature))); }
             if (block.toolUse() != null) toolCalls.add(new ToolCall(block.toolUse().toolUseId(), block.toolUse().name(), toObjectMap(block.toolUse().input().asMap())));
         }
         if (content.isEmpty() && toolCalls.isEmpty()) throw new BedrockResponseException("Bedrock returned no assistant text or tool call");
         software.amazon.awssdk.services.bedrockruntime.model.TokenUsage usage = response.usage();
         TokenUsage tokenUsage = usage == null ? null : new TokenUsage(usage.inputTokens(), usage.outputTokens(), usage.totalTokens());
-        return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content.toString(), List.of(new io.cortavyn.model.api.TextContent(content.toString())), null, toolCalls), new ChatResponseMetadata(null, response.responseMetadata().requestId(), response.stopReasonAsString(), tokenUsage), java.util.Map.of());
+        blocks.addFirst(new io.cortavyn.model.api.TextContent(content.toString()));
+        return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content.toString(), blocks, null, toolCalls), new ChatResponseMetadata(null, response.responseMetadata().requestId(), response.stopReasonAsString(), tokenUsage), java.util.Map.of());
     }
 
     @Override
