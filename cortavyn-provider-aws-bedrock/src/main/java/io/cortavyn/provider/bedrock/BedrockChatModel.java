@@ -5,6 +5,10 @@ import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
+import io.cortavyn.model.api.ChatResponseMetadata;
+import io.cortavyn.model.api.TokenUsage;
+import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.ToolDefinition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -71,12 +75,17 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
                 case SYSTEM -> system.add(SystemContentBlock.builder().text(message.content()).build());
                 case USER -> messages.add(Message.builder().role(ConversationRole.USER).content(content).build());
                 case ASSISTANT -> messages.add(Message.builder().role(ConversationRole.ASSISTANT).content(content).build());
-                case TOOL -> throw new IllegalArgumentException("TOOL messages require tool-call identifiers and are not supported yet");
+                case TOOL -> messages.add(Message.builder().role(ConversationRole.USER).content(ContentBlock.builder().toolResult(result -> result.toolUseId(message.toolCallId()).content(block -> block.text(message.content()))).build()).build());
             }
         }
         if (messages.isEmpty()) throw new IllegalArgumentException("Bedrock requires at least one non-system message");
         ConverseRequest.Builder builder = ConverseRequest.builder().modelId(modelId).messages(messages);
         if (!system.isEmpty()) builder.system(system);
+        if (!request.tools().isEmpty()) {
+            List<software.amazon.awssdk.services.bedrockruntime.model.Tool> tools = new ArrayList<>();
+            for (ToolDefinition tool : request.tools()) tools.add(software.amazon.awssdk.services.bedrockruntime.model.Tool.builder().toolSpec(spec -> spec.name(tool.name()).description(tool.description()).inputSchema(schema -> schema.json(Document.fromMap(toDocumentMap(tool.inputSchema()))))).build());
+            builder.toolConfig(configuration -> configuration.tools(tools));
+        }
         if (maxTokens != null || temperature != null || topP != null || !stopSequences.isEmpty()) {
             InferenceConfiguration.Builder inference = InferenceConfiguration.builder();
             if (maxTokens != null) inference.maxTokens(maxTokens);
@@ -94,11 +103,15 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
             throw new BedrockResponseException("Bedrock returned no assistant message");
         }
         StringBuilder content = new StringBuilder();
+        List<ToolCall> toolCalls = new ArrayList<>();
         for (ContentBlock block : response.output().message().content()) {
             if (block.text() != null) content.append(block.text());
+            if (block.toolUse() != null) toolCalls.add(new ToolCall(block.toolUse().toolUseId(), block.toolUse().name(), toObjectMap(block.toolUse().input().asMap())));
         }
-        if (content.isEmpty()) throw new BedrockResponseException("Bedrock returned no assistant text content");
-        return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content.toString()));
+        if (content.isEmpty() && toolCalls.isEmpty()) throw new BedrockResponseException("Bedrock returned no assistant text or tool call");
+        software.amazon.awssdk.services.bedrockruntime.model.TokenUsage usage = response.usage();
+        TokenUsage tokenUsage = usage == null ? null : new TokenUsage(usage.inputTokens(), usage.outputTokens(), usage.totalTokens());
+        return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content.toString(), List.of(new io.cortavyn.model.api.TextContent(content.toString())), null, toolCalls), new ChatResponseMetadata(null, response.responseMetadata().requestId(), response.stopReasonAsString(), tokenUsage), java.util.Map.of());
     }
 
     @Override
@@ -115,6 +128,8 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
         return value;
     }
+    private static java.util.Map<String, Document> toDocumentMap(java.util.Map<String, Object> values) { return values.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey, entry -> Document.fromString(String.valueOf(entry.getValue())))); }
+    private static java.util.Map<String, Object> toObjectMap(java.util.Map<String, Document> values) { return values.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey, entry -> entry.getValue().toString())); }
 
     public static final class Builder {
         private @Nullable BedrockRuntimeAsyncClient client;
