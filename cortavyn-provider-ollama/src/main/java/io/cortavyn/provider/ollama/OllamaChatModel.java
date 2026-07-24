@@ -10,6 +10,12 @@ import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
+import io.cortavyn.model.api.ChatResponseMetadata;
+import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.TokenUsage;
+import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.ToolDefinition;
+import java.util.List;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -53,11 +59,11 @@ public final class OllamaChatModel implements ChatModel {
         if (!options.isEmpty()) root.putPOJO("options", options);
         if (think != null) root.put("think", think);
         if (keepAlive != null) root.put("keep_alive", keepAlive);
+        if (!request.tools().isEmpty()) { ArrayNode tools = root.putArray("tools"); for (ToolDefinition tool : request.tools()) { ObjectNode function = tools.addObject().put("type", "function").putObject("function"); function.put("name", tool.name()); function.put("description", tool.description()); function.putPOJO("parameters", tool.inputSchema()); } }
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {
-            if (message.role() == ChatMessageRole.TOOL) throw new IllegalArgumentException("TOOL messages require tool-call metadata and are not supported yet");
             ObjectNode wireMessage = messages.addObject();
-            wireMessage.put("role", switch (message.role()) { case SYSTEM -> "system"; case USER -> "user"; case ASSISTANT -> "assistant"; case TOOL -> throw new AssertionError(); });
+            wireMessage.put("role", switch (message.role()) { case SYSTEM -> "system"; case USER -> "user"; case ASSISTANT -> "assistant"; case TOOL -> "tool"; });
             wireMessage.put("content", message.content());
         }
         try { return JSON.writeValueAsString(root); }
@@ -67,9 +73,12 @@ public final class OllamaChatModel implements ChatModel {
     private ChatResponse toChatResponse(HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) throw new OllamaHttpException(response.statusCode(), response.body());
         try {
-            @Nullable String content = JSON.readTree(response.body()).path("message").path("content").textValue();
-            if (content == null) throw new OllamaResponseException("Ollama returned no assistant message content");
-            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content));
+            JsonNode root = JSON.readTree(response.body()); JsonNode message = root.path("message"); @Nullable String content = message.path("content").textValue(); if (content == null) content = "";
+            List<ToolCall> calls = new java.util.ArrayList<>(); int index = 0; for (JsonNode call : message.path("tool_calls")) { JsonNode function = call.path("function"); calls.add(new ToolCall("ollama-" + index++, function.path("name").asText(), JSON.convertValue(function.path("arguments"), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { }))); }
+            if (content.isEmpty() && calls.isEmpty()) throw new OllamaResponseException("Ollama returned no assistant text or tool calls");
+            List<io.cortavyn.model.api.ChatContent> blocks = new java.util.ArrayList<>(); blocks.add(new io.cortavyn.model.api.TextContent(content)); @Nullable String thinking = message.path("thinking").textValue(); if (thinking != null) blocks.add(new ReasoningContent(thinking));
+            TokenUsage usage = root.path("prompt_eval_count").isMissingNode() ? null : new TokenUsage(root.path("prompt_eval_count").asInt(), root.path("eval_count").asInt(), root.path("prompt_eval_count").asInt() + root.path("eval_count").asInt());
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content, blocks, null, calls), new ChatResponseMetadata(root.path("model").textValue(), null, root.path("done_reason").textValue(), usage), Map.of());
         } catch (JsonProcessingException exception) { throw new OllamaResponseException("Ollama returned an invalid JSON response", exception); }
     }
 
