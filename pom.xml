@@ -28,6 +28,7 @@
         <module>cortavyn-deep</module>
         <module>cortavyn-provider-openai</module>
         <module>cortavyn-provider-mistral</module>
+        <module>cortavyn-provider-gemini</module>
         <module>cortavyn-provider-anthropic</module>
         <module>cortavyn-provider-ollama</module>
         <module>cortavyn-provider-openai-compatible</module>

@@ -8,5 +8,6 @@
     <modules>
         <module>openai-chat</module>
         <module>mistral-chat</module>
+        <module>gemini-chat</module>
     </modules>
 </project>
