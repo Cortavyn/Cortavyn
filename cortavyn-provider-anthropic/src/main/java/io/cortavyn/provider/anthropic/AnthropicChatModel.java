@@ -10,6 +10,10 @@ import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
+import io.cortavyn.model.api.ChatResponseMetadata;
+import io.cortavyn.model.api.TokenUsage;
+import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.ToolDefinition;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -83,15 +87,23 @@ public final class AnthropicChatModel implements ChatModel {
         if (topK != null) root.put("top_k", topK);
         if (topP != null) root.put("top_p", topP);
         if (!stopSequences.isEmpty()) root.putPOJO("stop_sequences", stopSequences);
+        if (!request.tools().isEmpty()) {
+            ArrayNode tools = root.putArray("tools");
+            for (ToolDefinition tool : request.tools()) {
+                ObjectNode node = tools.addObject(); node.put("name", tool.name()); node.put("description", tool.description()); node.putPOJO("input_schema", tool.inputSchema());
+            }
+        }
         additionalParameters.forEach(root::putPOJO);
         StringBuilder system = new StringBuilder();
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {
-            if (message.role() == ChatMessageRole.TOOL) throw new IllegalArgumentException("TOOL messages require tool-use identifiers and are not supported yet");
             if (message.role() == ChatMessageRole.SYSTEM) { if (!system.isEmpty()) system.append('\n'); system.append(message.content()); continue; }
             ObjectNode wireMessage = messages.addObject();
             wireMessage.put("role", message.role() == ChatMessageRole.ASSISTANT ? "assistant" : "user");
-            wireMessage.put("content", message.content());
+            if (message.role() == ChatMessageRole.TOOL) {
+                ArrayNode blocks = wireMessage.putArray("content");
+                blocks.addObject().put("type", "tool_result").put("tool_use_id", message.toolCallId()).put("content", message.content());
+            } else wireMessage.put("content", message.content());
         }
         if (!system.isEmpty()) root.put("system", system.toString());
         if (messages.isEmpty()) throw new IllegalArgumentException("Anthropic requires at least one non-system message");
@@ -102,11 +114,13 @@ public final class AnthropicChatModel implements ChatModel {
     private ChatResponse toChatResponse(HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) throw new AnthropicHttpException(response.statusCode(), response.body());
         try {
-            JsonNode content = JSON.readTree(response.body()).path("content");
+            JsonNode root = JSON.readTree(response.body()); JsonNode content = root.path("content");
             StringBuilder text = new StringBuilder();
-            for (JsonNode block : content) { @Nullable String value = block.path("text").textValue(); if (value != null) text.append(value); }
-            if (text.isEmpty()) throw new AnthropicResponseException("Anthropic returned no assistant message text");
-            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, text.toString()));
+            List<ToolCall> toolCalls = new java.util.ArrayList<>();
+            for (JsonNode block : content) { @Nullable String value = block.path("text").textValue(); if (value != null) text.append(value); if ("tool_use".equals(block.path("type").asText())) toolCalls.add(new ToolCall(block.path("id").asText(), block.path("name").asText(), JSON.convertValue(block.path("input"), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { }))); }
+            if (text.isEmpty() && toolCalls.isEmpty()) throw new AnthropicResponseException("Anthropic returned neither assistant text nor tool calls");
+            JsonNode usage = root.path("usage"); TokenUsage tokenUsage = usage.isMissingNode() ? null : new TokenUsage(usage.path("input_tokens").asInt(), usage.path("output_tokens").asInt(), usage.path("input_tokens").asInt() + usage.path("output_tokens").asInt());
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, text.toString(), List.of(new io.cortavyn.model.api.TextContent(text.toString())), null, toolCalls), new ChatResponseMetadata(root.path("model").textValue(), response.headers().firstValue("request-id").orElse(null), root.path("stop_reason").textValue(), tokenUsage), Map.of());
         } catch (JsonProcessingException exception) { throw new AnthropicResponseException("Anthropic returned an invalid JSON response", exception); }
     }
 
