@@ -33,6 +33,7 @@
         <module>cortavyn-provider-ollama</module>
         <module>cortavyn-provider-openai-compatible</module>
         <module>cortavyn-provider-openrouter</module>
+        <module>cortavyn-provider-azure-openai</module>
         <module>examples</module>
     </modules>
 

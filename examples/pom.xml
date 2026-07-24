@@ -10,5 +10,6 @@
         <module>mistral-chat</module>
         <module>gemini-chat</module>
         <module>openrouter-chat</module>
+        <module>azure-openai-chat</module>
     </modules>
 </project>

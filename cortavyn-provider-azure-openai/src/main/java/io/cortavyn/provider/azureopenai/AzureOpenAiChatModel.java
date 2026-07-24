@@ -1,0 +1,181 @@
+package io.cortavyn.provider.azureopenai;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.cortavyn.model.api.ChatMessage;
+import io.cortavyn.model.api.ChatMessageRole;
+import io.cortavyn.model.api.ChatModel;
+import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.model.api.ChatResponse;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CompletionStage;
+import org.jspecify.annotations.Nullable;
+
+/**
+ * An Azure OpenAI Chat Completions adapter.
+ *
+ * <p>Azure routes chat requests through a deployment. Accordingly, {@code deploymentName}, not a
+ * model name, is required. This mirrors LangChain's {@code AzureChatOpenAI} distinction.</p>
+ */
+public final class AzureOpenAiChatModel implements ChatModel {
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+    private static final Set<String> RESERVED_PARAMETERS = Set.of(
+            "messages", "temperature", "max_completion_tokens", "top_p", "frequency_penalty",
+            "presence_penalty", "seed", "stop");
+
+    private final HttpClient httpClient;
+    private final URI chatCompletionsUri;
+    private final String apiKey;
+    private final Duration timeout;
+    private final @Nullable Double temperature;
+    private final @Nullable Integer maxTokens;
+    private final @Nullable Double topP;
+    private final @Nullable Double frequencyPenalty;
+    private final @Nullable Double presencePenalty;
+    private final @Nullable Integer seed;
+    private final List<String> stopSequences;
+    private final Map<String, Object> additionalParameters;
+
+    private AzureOpenAiChatModel(Builder builder) {
+        httpClient = builder.httpClient == null ? HttpClient.newHttpClient() : builder.httpClient;
+        apiKey = requireNonBlank(builder.apiKey, "apiKey");
+        String endpoint = normalizeEndpoint(builder.endpoint);
+        String deployment = requireNonBlank(builder.deploymentName, "deploymentName");
+        String apiVersion = requireNonBlank(builder.apiVersion, "apiVersion");
+        chatCompletionsUri = URI.create(endpoint + "openai/deployments/" + deployment
+                + "/chat/completions?api-version=" + apiVersion);
+        timeout = builder.timeout == null ? DEFAULT_TIMEOUT : builder.timeout;
+        temperature = builder.temperature;
+        maxTokens = builder.maxTokens;
+        topP = builder.topP;
+        frequencyPenalty = builder.frequencyPenalty;
+        presencePenalty = builder.presencePenalty;
+        seed = builder.seed;
+        stopSequences = builder.stopSequences == null ? List.of() : List.copyOf(builder.stopSequences);
+        additionalParameters = Map.copyOf(builder.additionalParameters);
+        validate();
+    }
+
+    public static Builder builder() { return new Builder(); }
+
+    @Override
+    public CompletionStage<ChatResponse> complete(ChatRequest request) {
+        Objects.requireNonNull(request, "request must not be null");
+        HttpRequest httpRequest = HttpRequest.newBuilder(chatCompletionsUri)
+                .timeout(timeout)
+                .header("api-key", apiKey)
+                .header("Content-Type", "application/json")
+                .header("User-Agent", "cortavyn-java")
+                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request)))
+                .build();
+        return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
+                .thenApply(this::toChatResponse);
+    }
+
+    String toRequestJson(ChatRequest request) {
+        ObjectNode root = JSON.createObjectNode();
+        if (temperature != null) root.put("temperature", temperature);
+        if (maxTokens != null) root.put("max_completion_tokens", maxTokens);
+        if (topP != null) root.put("top_p", topP);
+        if (frequencyPenalty != null) root.put("frequency_penalty", frequencyPenalty);
+        if (presencePenalty != null) root.put("presence_penalty", presencePenalty);
+        if (seed != null) root.put("seed", seed);
+        if (!stopSequences.isEmpty()) root.putPOJO("stop", stopSequences);
+        additionalParameters.forEach(root::putPOJO);
+        ArrayNode messages = root.putArray("messages");
+        for (ChatMessage message : request.messages()) {
+            if (message.role() == ChatMessageRole.TOOL) {
+                throw new IllegalArgumentException("TOOL messages require tool-call identifiers and are not supported yet");
+            }
+            ObjectNode wireMessage = messages.addObject();
+            wireMessage.put("role", message.role().name().toLowerCase(Locale.ROOT));
+            wireMessage.put("content", message.content());
+        }
+        try { return JSON.writeValueAsString(root); }
+        catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Azure OpenAI request", exception); }
+    }
+
+    private ChatResponse toChatResponse(HttpResponse<String> response) {
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new AzureOpenAiHttpException(response.statusCode(), response.body());
+        }
+        try {
+            @Nullable String content = JSON.readTree(response.body()).path("choices").path(0)
+                    .path("message").path("content").textValue();
+            if (content == null) throw new AzureOpenAiResponseException("Azure OpenAI returned no assistant message content");
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content));
+        } catch (JsonProcessingException exception) {
+            throw new AzureOpenAiResponseException("Azure OpenAI returned an invalid JSON response", exception);
+        }
+    }
+
+    private void validate() {
+        if (timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("timeout must be positive");
+        if (temperature != null && (temperature < 0 || temperature > 2)) throw new IllegalArgumentException("temperature must be in [0.0, 2.0]");
+        if (maxTokens != null && maxTokens <= 0) throw new IllegalArgumentException("maxTokens must be positive");
+        if (topP != null && (topP < 0 || topP > 1)) throw new IllegalArgumentException("topP must be in [0.0, 1.0]");
+        if (frequencyPenalty != null && (frequencyPenalty < -2 || frequencyPenalty > 2)) throw new IllegalArgumentException("frequencyPenalty must be in [-2.0, 2.0]");
+        if (presencePenalty != null && (presencePenalty < -2 || presencePenalty > 2)) throw new IllegalArgumentException("presencePenalty must be in [-2.0, 2.0]");
+        additionalParameters.keySet().forEach(key -> {
+            if (RESERVED_PARAMETERS.contains(key)) throw new IllegalArgumentException("additionalParameters must not override " + key);
+        });
+    }
+
+    private static String normalizeEndpoint(@Nullable URI endpoint) {
+        if (endpoint == null) throw new IllegalArgumentException("endpoint must not be null");
+        String value = endpoint.toString();
+        if (value.isBlank()) throw new IllegalArgumentException("endpoint must not be blank");
+        return value.endsWith("/") ? value : value + "/";
+    }
+
+    private static String requireNonBlank(@Nullable String value, String name) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
+        return value;
+    }
+
+    public static final class Builder {
+        private @Nullable HttpClient httpClient;
+        private @Nullable URI endpoint;
+        private @Nullable String apiKey;
+        private @Nullable String deploymentName;
+        private @Nullable String apiVersion;
+        private @Nullable Duration timeout;
+        private @Nullable Double temperature;
+        private @Nullable Integer maxTokens;
+        private @Nullable Double topP;
+        private @Nullable Double frequencyPenalty;
+        private @Nullable Double presencePenalty;
+        private @Nullable Integer seed;
+        private @Nullable List<String> stopSequences;
+        private Map<String, Object> additionalParameters = Map.of();
+        private Builder() { }
+        public Builder httpClient(HttpClient value) { httpClient = Objects.requireNonNull(value); return this; }
+        public Builder endpoint(URI value) { endpoint = Objects.requireNonNull(value); return this; }
+        public Builder apiKey(String value) { apiKey = value; return this; }
+        public Builder deploymentName(String value) { deploymentName = value; return this; }
+        public Builder apiVersion(String value) { apiVersion = value; return this; }
+        public Builder timeout(Duration value) { timeout = value; return this; }
+        public Builder temperature(double value) { temperature = value; return this; }
+        public Builder maxTokens(int value) { maxTokens = value; return this; }
+        public Builder topP(double value) { topP = value; return this; }
+        public Builder frequencyPenalty(double value) { frequencyPenalty = value; return this; }
+        public Builder presencePenalty(double value) { presencePenalty = value; return this; }
+        public Builder seed(int value) { seed = value; return this; }
+        public Builder stopSequences(List<String> value) { stopSequences = List.copyOf(value); return this; }
+        public Builder additionalParameters(Map<String, Object> value) { additionalParameters = Map.copyOf(value); return this; }
+        public AzureOpenAiChatModel build() { return new AzureOpenAiChatModel(this); }
+    }
+}
