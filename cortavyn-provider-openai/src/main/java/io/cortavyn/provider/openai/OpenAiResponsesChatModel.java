@@ -15,6 +15,8 @@ import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.ReasoningContent;
 import io.cortavyn.model.api.TextContent;
 import io.cortavyn.model.api.TokenUsage;
+import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.ToolDefinition;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -68,6 +70,7 @@ public final class OpenAiResponsesChatModel implements ChatModel {
         root.putObject("reasoning")
                 .put("effort", request.extensions().getOrDefault("openai.reasoning_effort", "medium").toString());
         root.putArray("include").add("reasoning.encrypted_content");
+        addTools(root, request.tools());
 
         Continuation continuation = continuationFor(request);
         if (continuation.responseId() != null) {
@@ -100,6 +103,20 @@ public final class OpenAiResponsesChatModel implements ChatModel {
         return new Continuation(null, 0);
     }
 
+    private static void addTools(ObjectNode root, List<ToolDefinition> definitions) {
+        if (definitions.isEmpty()) {
+            return;
+        }
+        ArrayNode tools = root.putArray("tools");
+        for (ToolDefinition definition : definitions) {
+            tools.addObject()
+                    .put("type", "function")
+                    .put("name", definition.name())
+                    .put("description", definition.description())
+                    .putPOJO("parameters", definition.inputSchema());
+        }
+    }
+
     private static void addMessage(ArrayNode input, ChatMessage message) {
         for (ChatContent block : message.contentBlocks()) {
             if (block instanceof ReasoningContent reasoning
@@ -127,15 +144,18 @@ public final class OpenAiResponsesChatModel implements ChatModel {
             JsonNode root = JSON.readTree(response.body());
             StringBuilder text = new StringBuilder();
             List<ChatContent> blocks = new ArrayList<>();
+            List<ToolCall> toolCalls = new ArrayList<>();
             for (JsonNode item : root.path("output")) {
                 if ("message".equals(item.path("type").asText())) {
                     appendText(item, text);
                 } else if ("reasoning".equals(item.path("type").asText())) {
                     addReasoning(item, blocks);
+                } else if ("function_call".equals(item.path("type").asText())) {
+                    toolCalls.add(toToolCall(item));
                 }
             }
-            if (text.isEmpty()) {
-                throw new OpenAiResponseException("Responses API returned no output text");
+            if (text.isEmpty() && toolCalls.isEmpty()) {
+                throw new OpenAiResponseException("Responses API returned neither output text nor tool calls");
             }
             blocks.addFirst(new TextContent(text.toString()));
 
@@ -146,7 +166,7 @@ public final class OpenAiResponsesChatModel implements ChatModel {
             String responseId = root.path("id").asText();
             Map<String, Object> messageMetadata = responseId.isBlank() ? Map.of() : Map.of("openai.response_id", responseId);
             return new ChatResponse(
-                    new ChatMessage(ChatMessageRole.ASSISTANT, text.toString(), blocks, null, List.of(), messageMetadata),
+                    new ChatMessage(ChatMessageRole.ASSISTANT, text.toString(), blocks, null, toolCalls, messageMetadata),
                     new ChatResponseMetadata(root.path("model").textValue(), responseId, root.path("status").textValue(), tokens),
                     responseId.isBlank() ? Map.of() : Map.of("openai.response_id", responseId));
         } catch (JsonProcessingException exception) {
@@ -168,6 +188,17 @@ public final class OpenAiResponsesChatModel implements ChatModel {
         blocks.add(new ReasoningContent(
                 summary,
                 encryptedContent.isBlank() ? Map.of() : Map.of("encrypted_content", encryptedContent)));
+    }
+
+    private static ToolCall toToolCall(JsonNode item) {
+        String arguments = item.path("arguments").asText("{}");
+        try {
+            Map<String, Object> parsedArguments = JSON.readValue(
+                    arguments, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { });
+            return new ToolCall(item.path("call_id").asText(), item.path("name").asText(), parsedArguments);
+        } catch (JsonProcessingException exception) {
+            throw new OpenAiResponseException("Responses API returned invalid function-call arguments", exception);
+        }
     }
 
     private static String required(@Nullable String value, String name) {
