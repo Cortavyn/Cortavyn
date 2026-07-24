@@ -21,6 +21,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
 import org.jspecify.annotations.Nullable;
@@ -42,6 +43,7 @@ public final class GeminiChatModel implements ChatModel {
     private final @Nullable Integer topK;
     private final @Nullable Integer maxOutputTokens;
     private final List<String> stopSequences;
+    private final Map<String, Object> thinkingConfig;
 
     private GeminiChatModel(Builder builder) {
         this.httpClient = builder.httpClient == null ? HttpClient.newHttpClient() : builder.httpClient;
@@ -54,6 +56,7 @@ public final class GeminiChatModel implements ChatModel {
         this.topK = builder.topK;
         this.maxOutputTokens = builder.maxOutputTokens;
         this.stopSequences = builder.stopSequences == null ? List.of() : List.copyOf(builder.stopSequences);
+        this.thinkingConfig = Map.copyOf(builder.thinkingConfig);
         if (timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("timeout must be positive");
         if (temperature != null && (temperature < 0 || temperature > 2)) throw new IllegalArgumentException("temperature must be in [0.0, 2.0]");
         if (topP != null && (topP < 0 || topP > 1)) throw new IllegalArgumentException("topP must be in [0.0, 1.0]");
@@ -89,13 +92,25 @@ public final class GeminiChatModel implements ChatModel {
             }
             ObjectNode content = contents.addObject();
             content.put("role", message.role() == ChatMessageRole.ASSISTANT ? "model" : "user");
-            if (message.role() == ChatMessageRole.TOOL) content.putArray("parts").addObject().putObject("functionResponse").put("name", message.toolCallId()).putObject("response").put("content", message.content());
-            else if (message.role() == ChatMessageRole.ASSISTANT && message.contentBlocks().stream().anyMatch(io.cortavyn.model.api.ReasoningContent.class::isInstance)) {
+            if (message.role() == ChatMessageRole.TOOL) {
+                String toolCallId = Objects.requireNonNull(message.toolCallId(), "TOOL messages require toolCallId");
+                ObjectNode functionResponse = content.putArray("parts").addObject().putObject("functionResponse");
+                functionResponse.put("name", toolNameFor(request.messages(), toolCallId));
+                functionResponse.put("id", toolCallId);
+                functionResponse.putObject("response").put("content", message.content());
+            } else if (message.role() == ChatMessageRole.ASSISTANT) {
                 ArrayNode parts = content.putArray("parts");
                 for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
                     if (block instanceof io.cortavyn.model.api.ReasoningContent reasoning) { ObjectNode thought = parts.addObject().put("text", reasoning.text()).put("thought", true); Object signature = reasoning.providerState().get("thoughtSignature"); if (signature instanceof String value && !value.isBlank()) thought.put("thoughtSignature", value); }
                     else if (block instanceof io.cortavyn.model.api.TextContent text) parts.addObject().put("text", text.text());
                 }
+                for (ToolCall toolCall : message.toolCalls()) {
+                    ObjectNode part = parts.addObject();
+                    part.putObject("functionCall").put("name", toolCall.name()).put("id", toolCall.id()).putPOJO("args", toolCall.arguments());
+                    Object signature = toolCall.metadata().get("gemini.thoughtSignature");
+                    if (signature instanceof String value && !value.isBlank()) part.put("thoughtSignature", value);
+                }
+                if (parts.isEmpty()) parts.addObject().put("text", message.content());
             } else content.putArray("parts").addObject().put("text", message.content());
         }
         if (contents.isEmpty()) throw new IllegalArgumentException("Gemini requires at least one non-system message");
@@ -105,6 +120,7 @@ public final class GeminiChatModel implements ChatModel {
         if (topK != null) generationConfig.put("topK", topK);
         if (maxOutputTokens != null) generationConfig.put("maxOutputTokens", maxOutputTokens);
         if (!stopSequences.isEmpty()) generationConfig.putPOJO("stopSequences", stopSequences);
+        if (!thinkingConfig.isEmpty()) generationConfig.putPOJO("thinkingConfig", thinkingConfig);
         if (generationConfig.isEmpty()) root.remove("generationConfig");
         if (!request.tools().isEmpty()) {
             ArrayNode declarations = root.putArray("tools").addObject().putArray("functionDeclarations");
@@ -128,7 +144,15 @@ public final class GeminiChatModel implements ChatModel {
                 @Nullable String value = part.path("text").textValue();
                 if (value != null) text.append(value);
                 if (part.path("thought").asBoolean(false) && value != null) blocks.add(new ReasoningContent(value, java.util.Map.of("thoughtSignature", part.path("thoughtSignature").asText())));
-                JsonNode call = part.path("functionCall"); if (!call.isMissingNode()) toolCalls.add(new ToolCall(call.path("id").asText(call.path("name").asText()), call.path("name").asText(), JSON.convertValue(call.path("args"), new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() { })));
+                JsonNode call = part.path("functionCall");
+                if (!call.isMissingNode()) {
+                    String signature = part.path("thoughtSignature").asText();
+                    toolCalls.add(new ToolCall(
+                            call.path("id").asText(call.path("name").asText()),
+                            call.path("name").asText(),
+                            JSON.convertValue(call.path("args"), new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, Object>>() { }),
+                            signature.isBlank() ? java.util.Map.of() : java.util.Map.of("gemini.thoughtSignature", signature)));
+                }
             }
             if (text.isEmpty() && toolCalls.isEmpty()) throw new GeminiResponseException("Gemini returned neither assistant text nor function calls");
             JsonNode usage = root.path("usageMetadata"); TokenUsage tokens = usage.isMissingNode() ? null : new TokenUsage(usage.path("promptTokenCount").asInt(), usage.path("candidatesTokenCount").asInt(), usage.path("totalTokenCount").asInt());
@@ -149,6 +173,15 @@ public final class GeminiChatModel implements ChatModel {
         return value;
     }
 
+    private static String toolNameFor(List<ChatMessage> messages, String toolCallId) {
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            for (ToolCall toolCall : messages.get(index).toolCalls()) {
+                if (toolCall.id().equals(toolCallId)) return toolCall.name();
+            }
+        }
+        return toolCallId;
+    }
+
     public static final class Builder {
         private @Nullable HttpClient httpClient;
         private @Nullable URI baseUrl;
@@ -160,6 +193,7 @@ public final class GeminiChatModel implements ChatModel {
         private @Nullable Integer topK;
         private @Nullable Integer maxOutputTokens;
         private @Nullable List<String> stopSequences;
+        private Map<String, Object> thinkingConfig = Map.of();
 
         private Builder() { }
 
@@ -173,6 +207,8 @@ public final class GeminiChatModel implements ChatModel {
         public Builder topK(int topK) { this.topK = topK; return this; }
         public Builder maxOutputTokens(int maxOutputTokens) { this.maxOutputTokens = maxOutputTokens; return this; }
         public Builder stopSequences(List<String> stopSequences) { this.stopSequences = List.copyOf(stopSequences); return this; }
+        /** Configures Gemini thinking, for example {@code Map.of("includeThoughts", true)}. */
+        public Builder thinkingConfig(Map<String, Object> thinkingConfig) { this.thinkingConfig = Map.copyOf(thinkingConfig); return this; }
         public GeminiChatModel build() { return new GeminiChatModel(this); }
     }
 }
