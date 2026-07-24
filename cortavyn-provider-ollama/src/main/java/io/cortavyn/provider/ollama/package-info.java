@@ -1,3 +1,3 @@
-/** Ollama integration types. Concrete adapters will remain optional to all Cortavyn core modules. */
+/** Ollama chat API integration. */
 @org.jspecify.annotations.NullMarked
 package io.cortavyn.provider.ollama;
