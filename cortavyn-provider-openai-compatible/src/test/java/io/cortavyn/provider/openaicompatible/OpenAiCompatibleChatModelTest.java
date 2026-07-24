@@ -1,7 +1,6 @@
 package io.cortavyn.provider.openaicompatible;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.cortavyn.model.api.ChatMessage;
@@ -25,8 +24,9 @@ class OpenAiCompatibleChatModelTest {
     }
 
     @Test
-    void rejectsToolMessagesUntilThePortableApiHasToolCallIdentifiers() {
+    void mapsToolResultsWithTheirCallId() throws Exception {
         var model = OpenAiCompatibleChatModel.builder().baseUrl("https://example.test/v1").apiKey("token").modelName("model").build();
-        assertThrows(IllegalArgumentException.class, () -> model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.TOOL, "result")))));
+        var json = JSON.readTree(model.toRequestJson(new ChatRequest(List.of(ChatMessage.toolResult("call_1", "result")))));
+        assertEquals("call_1", json.path("messages").path(0).path("tool_call_id").asText());
     }
 }

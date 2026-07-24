@@ -9,6 +9,10 @@ import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
+import io.cortavyn.model.api.ChatResponseMetadata;
+import io.cortavyn.model.api.TokenUsage;
+import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.ToolDefinition;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -61,10 +65,11 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
         ObjectNode root = JSON.createObjectNode().put("model", modelName);
         if (temperature != null) root.put("temperature", temperature);
         if (maxTokens != null) root.put("max_tokens", maxTokens);
+        if (!request.tools().isEmpty()) { ArrayNode tools = root.putArray("tools"); for (ToolDefinition tool : request.tools()) { ObjectNode function = tools.addObject().put("type", "function").putObject("function"); function.put("name", tool.name()); function.put("description", tool.description()); function.putPOJO("parameters", tool.inputSchema()); } }
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {
-            if (message.role() == ChatMessageRole.TOOL) throw new IllegalArgumentException("TOOL messages are not supported yet");
-            messages.addObject().put("role", message.role().name().toLowerCase(Locale.ROOT)).put("content", message.content());
+            ObjectNode wire = messages.addObject().put("role", message.role().name().toLowerCase(Locale.ROOT)).put("content", message.content());
+            if (message.role() == ChatMessageRole.TOOL) wire.put("tool_call_id", message.toolCallId());
         }
         try { return JSON.writeValueAsString(root); }
         catch (JsonProcessingException e) { throw new IllegalStateException("Unable to serialize chat request", e); }
@@ -72,9 +77,13 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
     private ChatResponse toResponse(HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) throw new OpenAiCompatibleHttpException(response.statusCode(), response.body());
         try {
-            @Nullable String content = JSON.readTree(response.body()).path("choices").path(0).path("message").path("content").textValue();
-            if (content == null) throw new OpenAiCompatibleResponseException("Compatible endpoint returned no assistant text content");
-            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content));
+            var root = JSON.readTree(response.body()); var choice = root.path("choices").path(0); var message = choice.path("message");
+            @Nullable String content = message.path("content").textValue(); if (content == null) content = "";
+            List<ToolCall> toolCalls = new java.util.ArrayList<>();
+            for (var call : message.path("tool_calls")) { String arguments = call.path("function").path("arguments").asText("{}"); try { toolCalls.add(new ToolCall(call.path("id").asText(), call.path("function").path("name").asText(), JSON.readValue(arguments, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() { }))); } catch (JsonProcessingException exception) { throw new OpenAiCompatibleResponseException("Compatible endpoint returned invalid tool-call arguments", exception); } }
+            if (content.isEmpty() && toolCalls.isEmpty()) throw new OpenAiCompatibleResponseException("Compatible endpoint returned no assistant text or tool calls");
+            var usage = root.path("usage"); TokenUsage tokens = usage.isMissingNode() ? null : new TokenUsage(usage.path("prompt_tokens").asInt(), usage.path("completion_tokens").asInt(), usage.path("total_tokens").asInt());
+            return new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, content, List.of(new io.cortavyn.model.api.TextContent(content)), null, toolCalls), new ChatResponseMetadata(root.path("model").textValue(), response.headers().firstValue("x-request-id").orElse(null), choice.path("finish_reason").textValue(), tokens), Map.of());
         } catch (JsonProcessingException e) { throw new OpenAiCompatibleResponseException("Compatible endpoint returned invalid JSON", e); }
     }
     private static String requireNonBlank(@Nullable String value, String name) { if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank"); return value; }
