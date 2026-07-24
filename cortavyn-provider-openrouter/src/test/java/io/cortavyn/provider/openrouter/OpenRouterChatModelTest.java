@@ -42,9 +42,9 @@ class OpenRouterChatModelTest {
     }
 
     @Test
-    void keepsToolMessagesOutUntilPortableToolCallIdsExist() {
+    void mapsToolResultsWithToolCallIds() {
         var model = OpenRouterChatModel.builder().apiKey("test-key").build();
-        var request = new ChatRequest(List.of(new ChatMessage(ChatMessageRole.TOOL, "result")));
-        assertThrows(IllegalArgumentException.class, () -> model.toRequestJson(request));
+        var request = new ChatRequest(List.of(ChatMessage.toolResult("call_1", "result")));
+        assertEquals("{\"model\":\"openrouter/free\",\"messages\":[{\"role\":\"tool\",\"content\":\"result\",\"tool_call_id\":\"call_1\"}]}", model.toRequestJson(request));
     }
 }
