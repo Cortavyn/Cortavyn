@@ -43,6 +43,7 @@
         <module>cortavyn-provider-openrouter</module>
         <module>cortavyn-provider-azure-openai</module>
         <module>cortavyn-provider-aws-bedrock</module>
+        <module>cortavyn-architecture</module>
         <module>examples</module>
     </modules>
 
@@ -60,6 +61,7 @@
         <errorprone.version>2.50.0</errorprone.version>
         <nullaway.version>0.13.7</nullaway.version>
         <aws.sdk.version>2.47.3</aws.sdk.version>
+        <archunit.version>1.4.2</archunit.version>
     </properties>
 
     <dependencyManagement>

@@ -24,6 +24,10 @@ All production packages are `@NullMarked` with [JSpecify 1.0.0](https://jspecify
 
 [ROADMAP.md](ROADMAP.md) tracks the remaining chat-model capabilities and their implementation status.
 
+## Architecture
+
+The versioned [Structurizr C4 model](architecture/workspace.dsl) documents module responsibilities and dependency directions. The `cortavyn-architecture` module enforces those directions with ArchUnit as part of `mvn test`.
+
 ## Build
 
 Requires Java 25 and Maven 3.9+.
