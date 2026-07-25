@@ -14,6 +14,8 @@ import io.cortavyn.model.api.ReasoningContent;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import io.cortavyn.model.api.StructuredOutputChatModel;
+import io.cortavyn.model.api.StructuredOutputSchema;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -27,7 +29,7 @@ import java.util.concurrent.CompletionStage;
 import org.jspecify.annotations.Nullable;
 
 /** Portable adapter for endpoints implementing OpenAI's Chat Completions wire format. */
-public final class OpenAiCompatibleChatModel implements ChatModel {
+public final class OpenAiCompatibleChatModel implements StructuredOutputChatModel {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
     private final HttpClient httpClient;
@@ -58,19 +60,27 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
         if (maxTokens != null && maxTokens <= 0) throw new IllegalArgumentException("maxTokens must be positive");
     }
     public static Builder builder() { return new Builder(); }
-    @Override public CompletionStage<ChatResponse> complete(ChatRequest request) {
+    @Override public CompletionStage<ChatResponse> complete(ChatRequest request) { return completeInternal(request, null); }
+    @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
+        return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
+    }
+    private CompletionStage<ChatResponse> completeInternal(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         Objects.requireNonNull(request, "request must not be null");
         HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(timeout)
                 .header("Authorization", "Bearer " + apiKey).header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request)));
+                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request, schema)));
         headers.forEach(builder::header);
         return httpClient.sendAsync(builder.build(), HttpResponse.BodyHandlers.ofString()).thenApply(this::toResponse);
     }
     String toRequestJson(ChatRequest request) {
+        return toRequestJson(request, null);
+    }
+    String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode().put("model", modelName);
         if (temperature != null) root.put("temperature", temperature);
         if (maxTokens != null) root.put("max_tokens", maxTokens);
         if (!request.tools().isEmpty()) { ArrayNode tools = root.putArray("tools"); for (ToolDefinition tool : request.tools()) { ObjectNode function = tools.addObject().put("type", "function").putObject("function"); function.put("name", tool.name()); function.put("description", tool.description()); function.putPOJO("parameters", tool.inputSchema()); } }
+        if (schema != null) root.putObject("response_format").put("type", "json_schema").putObject("json_schema").put("name", schema.name()).put("strict", schema.strict()).putPOJO("schema", schema.jsonSchema());
         additionalParameters.forEach(root::putPOJO);
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {

@@ -1,4 +1,4 @@
-package io.cortavyn.examples.mistraltoolagent;
+package io.cortavyn.examples.mistral;
 
 import io.cortavyn.chat.ChatAgent;
 import io.cortavyn.chat.ChatTool;

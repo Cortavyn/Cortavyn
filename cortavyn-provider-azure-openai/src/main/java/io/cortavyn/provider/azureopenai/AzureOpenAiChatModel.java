@@ -14,6 +14,8 @@ import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import io.cortavyn.model.api.StructuredOutputChatModel;
+import io.cortavyn.model.api.StructuredOutputSchema;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -33,7 +35,7 @@ import org.jspecify.annotations.Nullable;
  * <p>Azure routes chat requests through a deployment. Accordingly, {@code deploymentName}, not a
  * model name, is required. This mirrors LangChain's {@code AzureChatOpenAI} distinction.</p>
  */
-public final class AzureOpenAiChatModel implements ChatModel {
+public final class AzureOpenAiChatModel implements StructuredOutputChatModel {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
     private static final Set<String> RESERVED_PARAMETERS = Set.of(
@@ -79,19 +81,28 @@ public final class AzureOpenAiChatModel implements ChatModel {
 
     @Override
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
+        return completeInternal(request, null);
+    }
+    @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
+        return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
+    }
+    private CompletionStage<ChatResponse> completeInternal(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         Objects.requireNonNull(request, "request must not be null");
         HttpRequest httpRequest = HttpRequest.newBuilder(chatCompletionsUri)
                 .timeout(timeout)
                 .header("api-key", apiKey)
                 .header("Content-Type", "application/json")
                 .header("User-Agent", "cortavyn-java")
-                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request)))
+                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request, schema)))
                 .build();
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
                 .thenApply(this::toChatResponse);
     }
 
     String toRequestJson(ChatRequest request) {
+        return toRequestJson(request, null);
+    }
+    String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode();
         if (temperature != null) root.put("temperature", temperature);
         if (maxTokens != null) root.put("max_completion_tokens", maxTokens);
@@ -102,6 +113,7 @@ public final class AzureOpenAiChatModel implements ChatModel {
         if (!stopSequences.isEmpty()) root.putPOJO("stop", stopSequences);
         if (reasoningEffort != null) root.put("reasoning_effort", reasoningEffort);
         if (!request.tools().isEmpty()) { ArrayNode tools = root.putArray("tools"); for (ToolDefinition tool : request.tools()) { ObjectNode function = tools.addObject().put("type", "function").putObject("function"); function.put("name", tool.name()); function.put("description", tool.description()); function.putPOJO("parameters", tool.inputSchema()); } }
+        if (schema != null) root.putObject("response_format").put("type", "json_schema").putObject("json_schema").put("name", schema.name()).put("strict", schema.strict()).putPOJO("schema", schema.jsonSchema());
         additionalParameters.forEach(root::putPOJO);
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {

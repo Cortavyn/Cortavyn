@@ -44,6 +44,20 @@ var weather = ChatTool.typed(WeatherArguments.class, arguments ->
 
 Runtime-aware tools additionally receive `ToolRuntime` with application context, an injected `ToolStore`, and a `ToolProgressWriter`. Configure it once on `ChatAgent.builder(model).runtime(runtime)`.
 
+## Structured output
+
+Request a Java record directly from any chat model. Cortavyn derives JSON Schema from nested records, lists, maps and enums, rejects unknown or mistyped fields locally, and keeps the original provider response available for usage and request metadata.
+
+```java
+record Weather(String city, int temperature) { }
+
+Weather answer = model.withStructuredOutput(Weather.class)
+        .complete(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, "Weather in Berlin?"))))
+        .toCompletableFuture().join().value();
+```
+
+OpenAI and Azure use strict JSON Schema response formats; Gemini uses `responseMimeType` and `responseJsonSchema`; Anthropic uses a forced schema tool. Mistral and OpenAI-compatible adapters request their JSON Schema response format. Other models receive a synthetic tool automatically, and plain JSON text remains supported as a fallback. Invalid responses throw `StructuredOutputException`, whose `violations()` identifies every invalid field.
+
 ## Build
 
 Requires Java 25 and Maven 3.9+.
@@ -61,6 +75,7 @@ OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-chat -am package -Prun-examp
 OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-tool-agent -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-chat -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-tool-agent -am package -Prun-example
+MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-structured-output -am package -Prun-example
 GEMINI_API_KEY=... mvn -pl :cortavyn-example-gemini-chat -am package -Prun-example
 OPENROUTER_API_KEY=... mvn -pl :cortavyn-example-openrouter-chat -am package -Prun-example
 ANTHROPIC_API_KEY=... mvn -pl :cortavyn-example-anthropic-chat -am package -Prun-example

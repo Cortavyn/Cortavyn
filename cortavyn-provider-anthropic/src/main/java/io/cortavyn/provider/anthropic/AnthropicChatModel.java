@@ -15,6 +15,8 @@ import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.StructuredOutputChatModel;
+import io.cortavyn.model.api.StructuredOutputSchema;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -28,7 +30,7 @@ import java.util.concurrent.CompletionStage;
 import org.jspecify.annotations.Nullable;
 
 /** An Anthropic Messages API adapter following LangChain's system-message separation. */
-public final class AnthropicChatModel implements ChatModel {
+public final class AnthropicChatModel implements StructuredOutputChatModel {
     private static final URI DEFAULT_BASE_URL = URI.create("https://api.anthropic.com/v1/");
     private static final String DEFAULT_MODEL_NAME = "claude-sonnet-4-5";
     private static final int DEFAULT_MAX_TOKENS = 4096;
@@ -73,15 +75,24 @@ public final class AnthropicChatModel implements ChatModel {
 
     @Override
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
+        return completeInternal(request, null);
+    }
+    @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
+        return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
+    }
+    private CompletionStage<ChatResponse> completeInternal(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         Objects.requireNonNull(request, "request must not be null");
         HttpRequest httpRequest = HttpRequest.newBuilder(messagesUri)
                 .timeout(timeout).header("x-api-key", apiKey).header("anthropic-version", "2023-06-01")
                 .header("Content-Type", "application/json").header("Accept", "application/json")
-                .header("User-Agent", "cortavyn-java").POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request))).build();
+                .header("User-Agent", "cortavyn-java").POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request, schema))).build();
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString()).thenApply(this::toChatResponse);
     }
 
     String toRequestJson(ChatRequest request) {
+        return toRequestJson(request, null);
+    }
+    String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode();
         root.put("model", modelName); root.put("max_tokens", maxTokens);
         if (temperature != null) root.put("temperature", temperature);
@@ -93,6 +104,11 @@ public final class AnthropicChatModel implements ChatModel {
             for (ToolDefinition tool : request.tools()) {
                 ObjectNode node = tools.addObject(); node.put("name", tool.name()); node.put("description", tool.description()); node.putPOJO("input_schema", tool.inputSchema());
             }
+        }
+        if (schema != null) {
+            ObjectNode tool = root.withArray("tools").addObject();
+            tool.put("name", schema.name()); tool.put("description", "Return the requested structured response."); tool.putPOJO("input_schema", schema.jsonSchema());
+            root.putObject("tool_choice").put("type", "tool").put("name", schema.name());
         }
         additionalParameters.forEach(root::putPOJO);
         StringBuilder system = new StringBuilder();

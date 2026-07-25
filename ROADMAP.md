@@ -65,14 +65,14 @@ This document tracks the remaining work needed to make Cortavyn's chat-model lay
 
 ### Structured output
 
-`StructuredOutputChatModel` and `StructuredOutputSchema` exist, but no adapter implements provider-enforced schema output.
+`StructuredOutputChatModel` now supports native provider schema strategies and a validated portable fallback.
 
-- [ ] OpenAI/Azure Responses or JSON Schema output
-- [ ] Anthropic strict tool-schema strategy
-- [ ] Gemini response schema and MIME type strategy
-- [ ] Mistral, Groq, xAI, and compatible-provider JSON modes where available
-- [ ] Portable fallback via a synthetic tool call
-- [ ] JSON parsing and schema-validation failure model
+- [x] OpenAI/Azure Responses or JSON Schema output
+- [x] Anthropic strict tool-schema strategy
+- [x] Gemini response schema and MIME type strategy
+- [x] Mistral, Groq, xAI, and compatible-provider JSON modes where available
+- [x] Portable fallback via a synthetic tool call
+- [x] JSON parsing and schema-validation failure model
 
 ### Multimodal request mapping
 

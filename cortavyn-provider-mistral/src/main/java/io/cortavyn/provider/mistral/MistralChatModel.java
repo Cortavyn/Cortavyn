@@ -15,6 +15,8 @@ import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.StructuredOutputChatModel;
+import io.cortavyn.model.api.StructuredOutputSchema;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -28,7 +30,7 @@ import java.util.concurrent.CompletionStage;
 import org.jspecify.annotations.Nullable;
 
 /** A Mistral chat-completions adapter with Mistral's default generation parameters. */
-public final class MistralChatModel implements ChatModel {
+public final class MistralChatModel implements StructuredOutputChatModel {
     private static final URI DEFAULT_BASE_URL = URI.create("https://api.mistral.ai/v1/");
     private static final String DEFAULT_MODEL_NAME = "mistral-small";
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(2);
@@ -78,6 +80,12 @@ public final class MistralChatModel implements ChatModel {
 
     @Override
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
+        return completeInternal(request, null);
+    }
+    @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
+        return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
+    }
+    private CompletionStage<ChatResponse> completeInternal(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         Objects.requireNonNull(request, "request must not be null");
         HttpRequest httpRequest = HttpRequest.newBuilder(chatCompletionsUri)
                 .timeout(timeout)
@@ -85,12 +93,15 @@ public final class MistralChatModel implements ChatModel {
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .header("User-Agent", "cortavyn-java")
-                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request)))
+                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request, schema)))
                 .build();
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString()).thenApply(this::toChatResponse);
     }
 
     String toRequestJson(ChatRequest request) {
+        return toRequestJson(request, null);
+    }
+    String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode();
         root.put("model", modelName);
         root.put("temperature", temperature);
@@ -102,6 +113,7 @@ public final class MistralChatModel implements ChatModel {
         if (reasoningEffort != null) root.put("reasoning_effort", reasoningEffort);
         additionalParameters.forEach(root::putPOJO);
         if (!request.tools().isEmpty()) { ArrayNode tools = root.putArray("tools"); for (ToolDefinition tool : request.tools()) { ObjectNode function = tools.addObject().put("type", "function").putObject("function"); function.put("name", tool.name()); function.put("description", tool.description()); function.putPOJO("parameters", tool.inputSchema()); } }
+        if (schema != null) root.putObject("response_format").put("type", "json_schema").putObject("json_schema").put("name", schema.name()).putPOJO("schema", schema.jsonSchema());
 
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {

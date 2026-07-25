@@ -15,6 +15,8 @@ import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.StructuredOutputChatModel;
+import io.cortavyn.model.api.StructuredOutputSchema;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -27,7 +29,7 @@ import java.util.concurrent.CompletionStage;
 import org.jspecify.annotations.Nullable;
 
 /** A Gemini Developer API adapter following LangChain's system-instruction and role mapping. */
-public final class GeminiChatModel implements ChatModel {
+public final class GeminiChatModel implements StructuredOutputChatModel {
     private static final URI DEFAULT_BASE_URL = URI.create("https://generativelanguage.googleapis.com/v1beta/");
     private static final String DEFAULT_MODEL_NAME = "gemini-2.5-flash";
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(1);
@@ -68,6 +70,12 @@ public final class GeminiChatModel implements ChatModel {
 
     @Override
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
+        return completeInternal(request, null);
+    }
+    @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
+        return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
+    }
+    private CompletionStage<ChatResponse> completeInternal(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         Objects.requireNonNull(request, "request must not be null");
         HttpRequest httpRequest = HttpRequest.newBuilder(generateContentUri)
                 .timeout(timeout)
@@ -75,12 +83,15 @@ public final class GeminiChatModel implements ChatModel {
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .header("User-Agent", "cortavyn-java")
-                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request)))
+                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request, schema)))
                 .build();
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString()).thenApply(this::toChatResponse);
     }
 
     String toRequestJson(ChatRequest request) {
+        return toRequestJson(request, null);
+    }
+    String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode();
         ArrayNode contents = root.putArray("contents");
         ArrayNode systemParts = null;
@@ -121,6 +132,7 @@ public final class GeminiChatModel implements ChatModel {
         if (maxOutputTokens != null) generationConfig.put("maxOutputTokens", maxOutputTokens);
         if (!stopSequences.isEmpty()) generationConfig.putPOJO("stopSequences", stopSequences);
         if (!thinkingConfig.isEmpty()) generationConfig.putPOJO("thinkingConfig", thinkingConfig);
+        if (schema != null) { generationConfig.put("responseMimeType", "application/json"); generationConfig.putPOJO("responseJsonSchema", schema.jsonSchema()); }
         if (generationConfig.isEmpty()) root.remove("generationConfig");
         if (!request.tools().isEmpty()) {
             ArrayNode declarations = root.putArray("tools").addObject().putArray("functionDeclarations");

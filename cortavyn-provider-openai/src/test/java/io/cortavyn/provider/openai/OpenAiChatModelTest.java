@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.model.api.StructuredOutputSchema;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -60,5 +61,13 @@ class OpenAiChatModelTest {
     void validatesSamplingParameterRanges() {
         assertThrows(IllegalArgumentException.class, () -> OpenAiChatModel.builder().apiKey("test-key").modelName("gpt-test").temperature(2.1).build());
         assertThrows(IllegalArgumentException.class, () -> OpenAiChatModel.builder().apiKey("test-key").modelName("gpt-test").presencePenalty(-2.1).build());
+    }
+
+    @Test
+    void mapsStructuredOutputToOpenAiJsonSchemaFormat() {
+        var model = OpenAiChatModel.builder().apiKey("test-key").modelName("gpt-test").build();
+        String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, "Hello"))),
+                new StructuredOutputSchema("answer", Map.of("type", "object"), true));
+        assertEquals("{\"model\":\"gpt-test\",\"response_format\":{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"answer\",\"strict\":true,\"schema\":{\"type\":\"object\"}}},\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}", payload);
     }
 }

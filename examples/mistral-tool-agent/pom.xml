@@ -8,5 +8,5 @@
         <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-chat</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-mistral</artifactId><version>${project.version}</version></dependency>
     </dependencies>
-    <profiles><profile><id>run-example</id><build><plugins><plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version><executions><execution><id>run-mistral-tool-agent-example</id><phase>package</phase><goals><goal>java</goal></goals><configuration><mainClass>io.cortavyn.examples.mistraltoolagent.MistralToolAgentExample</mainClass></configuration></execution></executions></plugin></plugins></build></profile></profiles>
+    <profiles><profile><id>run-example</id><build><plugins><plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version><executions><execution><id>run-mistral-tool-agent-example</id><phase>package</phase><goals><goal>java</goal></goals><configuration><mainClass>io.cortavyn.examples.mistral.MistralToolAgentExample</mainClass></configuration></execution></executions></plugin></plugins></build></profile></profiles>
 </project>

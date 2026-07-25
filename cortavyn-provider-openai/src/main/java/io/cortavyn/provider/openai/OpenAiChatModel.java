@@ -14,6 +14,8 @@ import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import io.cortavyn.model.api.StructuredOutputChatModel;
+import io.cortavyn.model.api.StructuredOutputSchema;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -33,7 +35,7 @@ import org.jspecify.annotations.Nullable;
  * <p>The adapter depends only on Cortavyn's portable model API. Provider configuration is supplied
  * through {@link Builder}; no credentials are read from the environment automatically.</p>
  */
-public final class OpenAiChatModel implements ChatModel {
+public final class OpenAiChatModel implements StructuredOutputChatModel {
     private static final URI DEFAULT_BASE_URL = URI.create("https://api.openai.com/v1/");
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -85,13 +87,20 @@ public final class OpenAiChatModel implements ChatModel {
 
     @Override
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
+        return completeInternal(request, null);
+    }
+
+    @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
+        return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
+    }
+    private CompletionStage<ChatResponse> completeInternal(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         Objects.requireNonNull(request, "request must not be null");
         var httpRequest = HttpRequest.newBuilder(chatCompletionsUri)
                 .timeout(timeout)
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
                 .header("User-Agent", "cortavyn-java")
-                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request)))
+                .POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request, schema)))
                 .build();
 
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
@@ -127,6 +136,9 @@ public final class OpenAiChatModel implements ChatModel {
     }
 
     String toRequestJson(ChatRequest request) {
+        return toRequestJson(request, null);
+    }
+    String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode();
         root.put("model", modelName);
         if (temperature != null) root.put("temperature", temperature);
@@ -145,6 +157,8 @@ public final class OpenAiChatModel implements ChatModel {
                 function.putPOJO("parameters", tool.inputSchema());
             }
         }
+        if (schema != null) root.putObject("response_format").put("type", "json_schema").putObject("json_schema")
+                .put("name", schema.name()).put("strict", schema.strict()).putPOJO("schema", schema.jsonSchema());
         additionalParameters.forEach(root::putPOJO);
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {
