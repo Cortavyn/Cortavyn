@@ -1,27 +1,20 @@
 package io.cortavyn.examples.mistral;
 
-import io.cortavyn.model.api.ChatMessage;
-import io.cortavyn.model.api.ChatMessageRole;
-import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.examples.graph.ResearchConversationExample;
 import io.cortavyn.provider.mistral.MistralChatModel;
-import java.util.List;
 
-/** Runs one real Mistral chat completion when explicitly invoked through Maven. */
+/** Runs a two-turn research and review conversation through Mistral. */
 public final class MistralChatExample {
     private MistralChatExample() {
     }
 
     public static void main(String[] args) {
-        String prompt = System.getProperty("example.prompt", "Explain durable agents in one sentence.");
+        String prompt = System.getProperty("example.prompt", "What trade-offs should a team consider when introducing durable AI agents?");
         var builder = MistralChatModel.builder().apiKey(requiredEnvironment("MISTRAL_API_KEY"));
         String modelName = System.getenv("MISTRAL_MODEL");
         if (modelName != null && !modelName.isBlank()) builder.modelName(modelName);
 
-        var response = builder.build()
-                .complete(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, prompt))))
-                .toCompletableFuture()
-                .join();
-        System.out.println(response.message().content());
+        ResearchConversationExample.run("mistral", builder.build(), prompt);
     }
 
     private static String requiredEnvironment(String name) {

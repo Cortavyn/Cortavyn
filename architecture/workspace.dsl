@@ -11,6 +11,7 @@ workspace "Cortavyn" "Durable agent systems for the JVM." {
             chat -> modelApi "uses chat-model contracts"
             deep -> graph "plans executable graphs"
             deep -> modelApi "uses chat-model contracts"
+            deep -> chat "uses tool-loop contracts"
             providers -> modelApi "implement chat-model contracts"
         }
     }

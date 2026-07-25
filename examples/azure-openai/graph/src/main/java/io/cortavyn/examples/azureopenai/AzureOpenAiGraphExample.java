@@ -16,7 +16,7 @@ public final class AzureOpenAiGraphExample {
                 .apiVersion(required("AZURE_OPENAI_API_VERSION"))
                 .build();
         // Once built, the adapter is used like every other portable ChatModel.
-        GraphWorkflowExample.run("azure-openai", model, System.getProperty("example.prompt", "Explain durable agents in one sentence."));
+        GraphWorkflowExample.run("azure-openai", model, System.getProperty("example.prompt", "How should a team introduce durable AI agents responsibly?"));
     }
     private static String required(String key) {
         String value = System.getenv(key);

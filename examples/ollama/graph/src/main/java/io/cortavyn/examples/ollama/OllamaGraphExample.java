@@ -15,6 +15,6 @@ public final class OllamaGraphExample {
         String baseUrl = System.getenv("OLLAMA_BASE_URL");
         if (baseUrl != null && !baseUrl.isBlank()) builder.baseUrl(URI.create(baseUrl));
         // The same graph can therefore be exercised entirely locally.
-        GraphWorkflowExample.run("ollama", builder.build(), System.getProperty("example.prompt", "Explain durable agents in one sentence."));
+        GraphWorkflowExample.run("ollama", builder.build(), System.getProperty("example.prompt", "How should a team introduce durable AI agents responsibly?"));
     }
 }

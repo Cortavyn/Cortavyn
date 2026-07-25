@@ -12,7 +12,7 @@ public final class AnthropicGraphExample {
         String modelName = System.getenv("ANTHROPIC_MODEL");
         if (modelName != null && !modelName.isBlank()) builder.modelName(modelName);
         // Execute the shared stateful workflow with this provider implementation.
-        GraphWorkflowExample.run("anthropic", builder.build(), System.getProperty("example.prompt", "Explain durable agents in one sentence."));
+        GraphWorkflowExample.run("anthropic", builder.build(), System.getProperty("example.prompt", "How should a team introduce durable AI agents responsibly?"));
     }
     private static String required(String key) {
         String value = System.getenv(key);

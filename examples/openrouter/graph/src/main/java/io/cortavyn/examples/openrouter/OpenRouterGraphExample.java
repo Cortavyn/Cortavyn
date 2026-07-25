@@ -12,7 +12,7 @@ public final class OpenRouterGraphExample {
         String modelName = System.getenv("OPENROUTER_MODEL");
         if (modelName != null && !modelName.isBlank()) builder.modelName(modelName);
         // Run draft and finalization nodes against the configured gateway model.
-        GraphWorkflowExample.run("openrouter", builder.build(), System.getProperty("example.prompt", "Explain durable agents in one sentence."));
+        GraphWorkflowExample.run("openrouter", builder.build(), System.getProperty("example.prompt", "How should a team introduce durable AI agents responsibly?"));
     }
     private static String required(String key) {
         String value = System.getenv(key);

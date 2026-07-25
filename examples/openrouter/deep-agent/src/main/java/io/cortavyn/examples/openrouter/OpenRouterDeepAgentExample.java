@@ -1,0 +1,5 @@
+package io.cortavyn.examples.openrouter;
+import io.cortavyn.examples.deep.ProviderDeepAgentExample;
+import io.cortavyn.provider.openrouter.OpenRouterChatModel;
+/** Runs the reviewed Deep Agent workflow through OpenRouter. */
+public final class OpenRouterDeepAgentExample { private OpenRouterDeepAgentExample() { } public static void main(String[] args) { var builder = OpenRouterChatModel.builder().apiKey(required("OPENROUTER_API_KEY")); String model = System.getenv("OPENROUTER_MODEL"); if (model != null && !model.isBlank()) builder.modelName(model); String siteUrl = System.getenv("OPENROUTER_SITE_URL"); if (siteUrl != null && !siteUrl.isBlank()) builder.siteUrl(siteUrl); String title = System.getenv("OPENROUTER_APP_TITLE"); if (title != null && !title.isBlank()) builder.appTitle(title); ProviderDeepAgentExample.run("openrouter", builder.build(), System.getProperty("example.prompt", "How should a team introduce durable AI agents responsibly?")); } private static String required(String key) { String value = System.getenv(key); if (value == null || value.isBlank()) throw new IllegalStateException(key + " must be set"); return value; } }

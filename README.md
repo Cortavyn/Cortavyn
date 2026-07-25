@@ -15,7 +15,7 @@ All production packages are `@NullMarked` with [JSpecify 1.0.0](https://jspecify
 | `cortavyn-model-api` | Portable chat-model contracts |
 | `cortavyn-graph` | Stateful graph runtime, checkpoints, routing, and streaming |
 | `cortavyn-chat` | Conversation and chat-session contracts |
-| `cortavyn-deep` | Planning and deep-agent contracts |
+| `cortavyn-deep` | Deep-agent harness, isolated workspace, planning, and extension contracts |
 | `cortavyn-provider-*` | Optional provider integration boundaries |
 
 `graph`, `chat`, and provider modules depend only on the APIs they need. `deep` composes `graph` and `model-api`; no core module depends on a provider SDK.
@@ -71,6 +71,31 @@ Use `interruptBefore`, `interruptAfter`, or an `Interrupt` result to pause a gra
 
 `cortavyn-chat` provides `ChatAgentNode` as the optional bridge: applications create a run-scoped `ChatSession` from `NodeRuntime`, making the graph run ID available when constructing `ToolRuntime`. Use `GraphToolProgressWriter` in that runtime to expose tool progress as graph custom events.
 
+## Deep agents
+
+`DeepAgent` provides a portable model/tool loop with a thread-isolated virtual workspace and built-in filesystem and todo tools. The default in-memory workspace accepts safe relative paths only; applications can provide another `DeepWorkspace` implementation for durable or host-backed storage.
+
+```java
+var agent = DeepAgent.builder(model)
+        .systemPrompt("You are a careful research assistant.")
+        .workspace(new InMemoryWorkspace())
+        .build();
+DeepRun run = agent.invoke("research-42", "Collect findings in notes/findings.txt")
+        .toCompletableFuture().join();
+```
+
+The harness exposes `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `write_todos`, persistent-memory and skill tools. `write_file`, `edit_file`, `write_memory`, and an optional `execute` tool pause by default; resume with one `ApprovalDecision` per pending action. The default virtual workspace implements `CheckpointableWorkspace`, so its file snapshot travels in `DeepPendingRun`; applications choose durable stores for paused runs, todos, and asynchronous subagent tasks through the corresponding `Deep*Store` interfaces.
+
+`invoke` and `resume` execute through an internally compiled `StateGraph`; a pending approval therefore becomes a durable graph interrupt. `stream(DeepRequest)` publishes typed model, tool, todo, context-offload, subagent and approval events before its terminal event. `DeepAgentNode` additionally adapts the harness into application-defined graphs; a `List<ApprovalDecision>` in its configured state key resumes the same deep run.
+
+The provider-free `cortavyn-example-deep` demonstrates the virtual workspace, a bundled write approval and a registered specialist without requiring credentials:
+
+```shell
+mvn -pl :cortavyn-example-deep -am package -Prun-example
+```
+
+Use `PermissionedWorkspace` for first-match-wins read/write path rules and `FilesystemWorkspace` only with a deliberately selected root. `ProcessSandbox` is an explicit local-development backend, not an untrusted-code isolation boundary; production applications should provide an isolated `Sandbox` implementation. MCP applications pass tools and resource workspaces through `mcpSources(...)`; agents can read resources through `read_mcp_resource`.
+
 ## Structured output
 
 Request a Java record directly from any chat model. Cortavyn derives JSON Schema from nested records, lists, maps and enums, rejects unknown or mistyped fields locally, and keeps the original provider response available for usage and request metadata.
@@ -95,24 +120,33 @@ mvn verify
 
 ## Examples
 
-The examples are executable smoke-test applications. They are compiled by the normal build but never call a provider automatically.
+The examples are executable smoke-test applications. They are compiled by the normal build but never call a provider automatically. Every chat-provider example now runs a short two-turn research conversation: it creates an initial answer and then asks the same model to critically review and improve it. Every graph-provider example runs a durable four-step workflow (plan, research, review, synthesis), prints its checkpoint count, and renders the resulting graph as Mermaid.
 
 ```shell
 OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-chat -am package -Prun-example
+OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-graph -am package -Prun-example
+OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-deep-agent -am package -Prun-example
 OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-tool-agent -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-chat -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-tool-agent -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-structured-output -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-operations -am package -Prun-example
+MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-deep-agent -am package -Prun-example
 GEMINI_API_KEY=... mvn -pl :cortavyn-example-gemini-chat -am package -Prun-example
+GEMINI_API_KEY=... mvn -pl :cortavyn-example-gemini-deep-agent -am package -Prun-example
 OPENROUTER_API_KEY=... mvn -pl :cortavyn-example-openrouter-chat -am package -Prun-example
+OPENROUTER_API_KEY=... mvn -pl :cortavyn-example-openrouter-deep-agent -am package -Prun-example
 ANTHROPIC_API_KEY=... mvn -pl :cortavyn-example-anthropic-chat -am package -Prun-example
+ANTHROPIC_API_KEY=... mvn -pl :cortavyn-example-anthropic-deep-agent -am package -Prun-example
 mvn -pl :cortavyn-example-ollama-chat -am package -Prun-example
+mvn -pl :cortavyn-example-ollama-deep-agent -am package -Prun-example
 AZURE_OPENAI_ENDPOINT=... AZURE_OPENAI_API_KEY=... AZURE_OPENAI_DEPLOYMENT=... AZURE_OPENAI_API_VERSION=... mvn -pl :cortavyn-example-azure-openai-chat -am package -Prun-example
+AZURE_OPENAI_ENDPOINT=... AZURE_OPENAI_API_KEY=... AZURE_OPENAI_DEPLOYMENT=... AZURE_OPENAI_API_VERSION=... mvn -pl :cortavyn-example-azure-openai-deep-agent -am package -Prun-example
 AWS_BEDROCK_MODEL=... mvn -pl :cortavyn-example-aws-bedrock-chat -am package -Prun-example
+AWS_BEDROCK_MODEL=... mvn -pl :cortavyn-example-aws-bedrock-deep-agent -am package -Prun-example
 ```
 
-Pass a prompt as Maven property with `-Dexample.prompt="Explain durable agents in one sentence."`. Mistral examples are grouped under `examples/mistral`; the operations example demonstrates the profile registry, factory, cache, retry/backoff, bounded concurrency, and metrics. The OpenAI example also accepts `OPENAI_MODEL`; Mistral uses the provider default unless `MISTRAL_MODEL` is set. The Gemini example follows LangChain's environment convention: `GOOGLE_API_KEY` takes precedence over `GEMINI_API_KEY`, and `GEMINI_MODEL` overrides its `gemini-2.5-flash` default.
+Pass a prompt as Maven property with `-Dexample.prompt="Explain durable agents in one sentence."`. Every `*-deep-agent` example uses provider tool calling for a todo plan, an isolated review specialist, a virtual workspace write, and a bundled human approval followed by resume. Mistral examples are grouped under `examples/mistral`; the operations example demonstrates the profile registry, factory, cache, retry/backoff, bounded concurrency, and metrics. The OpenAI example also accepts `OPENAI_MODEL`; Mistral uses the provider default unless `MISTRAL_MODEL` is set. The Gemini example follows LangChain's environment convention: `GOOGLE_API_KEY` takes precedence over `GEMINI_API_KEY`, and `GEMINI_MODEL` overrides its `gemini-2.5-flash` default.
 OpenRouter uses `OPENROUTER_MODEL` to choose a catalog model, plus optional `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` for application attribution.
 Azure OpenAI requires its resource endpoint, API key, deployment name, and API version.
 Bedrock uses the AWS SDK default credential and region provider chains; set `AWS_BEDROCK_MODEL` to a model ID available in the selected region.

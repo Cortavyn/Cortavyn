@@ -6,6 +6,7 @@
     <name>Cortavyn Example: OpenAI Chat</name>
     <dependencies>
         <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-openai</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-example-graph-support</artifactId><version>${project.version}</version></dependency>
     </dependencies>
     <profiles>
         <profile>

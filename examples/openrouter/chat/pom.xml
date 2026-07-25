@@ -6,6 +6,7 @@
     <name>Cortavyn Example: OpenRouter Chat</name>
     <dependencies>
         <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-openrouter</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-example-graph-support</artifactId><version>${project.version}</version></dependency>
     </dependencies>
     <profiles><profile><id>run-example</id><build><plugins><plugin>
         <groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.5.0</version>

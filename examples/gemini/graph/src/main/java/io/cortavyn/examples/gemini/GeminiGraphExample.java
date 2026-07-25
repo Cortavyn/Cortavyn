@@ -12,7 +12,7 @@ public final class GeminiGraphExample {
         String modelName = System.getenv("GEMINI_MODEL");
         if (modelName != null && !modelName.isBlank()) builder.modelName(modelName);
         // Delegate graph construction and checkpoint inspection to the shared workflow.
-        GraphWorkflowExample.run("gemini", builder.build(), System.getProperty("example.prompt", "Explain durable agents in one sentence."));
+        GraphWorkflowExample.run("gemini", builder.build(), System.getProperty("example.prompt", "How should a team introduce durable AI agents responsibly?"));
     }
     private static String requiredApiKey() {
         String value = System.getenv("GOOGLE_API_KEY");

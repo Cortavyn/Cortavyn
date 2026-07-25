@@ -11,37 +11,59 @@ import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import java.util.Map;
 
-/** Shared provider-neutral workflow used by every provider graph example. */
+/**
+ * Shared provider-neutral research workflow used by every provider graph example.
+ *
+ * <p>The example deliberately keeps its data fictional: it demonstrates orchestration and
+ * uncertainty handling without pretending that a model response is a verified external fact.</p>
+ */
 public final class GraphWorkflowExample {
     private GraphWorkflowExample() { }
     public static void run(String provider, ChatModel model, String prompt) {
-        // Each graph run keeps all intermediate values in an immutable, map-backed state.
+        // Each graph run keeps intermediate values in an immutable, map-backed state. The
+        // explicit channels make every model turn and its hand-off inspectable in checkpoints.
         var schema = StateSchema.builder(GraphState.adapter())
-                // Topic values are appended instead of overwritten, forming a small execution log.
+                .channel("question", StateChannel.lastValue())
+                .channel("plan", StateChannel.lastValue())
+                .channel("research", StateChannel.lastValue())
+                .channel("review", StateChannel.lastValue())
+                // Topic values are appended instead of overwritten, forming an execution log.
                 .channel("events", StateChannel.topic())
-                // Draft and answer are normal last-write-wins values.
-                .channel("draft", StateChannel.lastValue())
                 .channel("answer", StateChannel.lastValue())
                 .build();
 
-        // The first node delegates drafting to the provider-specific model.
+        // The workflow separates planning, evidence-style drafting, quality review, and final
+        // synthesis. In production each stage could use a specialist model or a human gate.
         var graph = new StateGraph<>(schema)
-                .addNode("draft", (state, runtime) -> model.complete(new ChatRequest(java.util.List.of(new ChatMessage(ChatMessageRole.USER, "Draft a concise answer: " + prompt))))
-                        .thenApply(response -> new StateUpdate(Map.of("draft", response.message().content(), "events", "drafted by " + provider))))
-                // The second node sees the draft in state and turns it into the final answer.
-                .addNode("finalize", (state, runtime) -> model.complete(new ChatRequest(java.util.List.of(new ChatMessage(ChatMessageRole.USER, "Improve this draft and return only the final answer: " + state.get("draft", String.class)))))
-                        .thenApply(response -> new StateUpdate(Map.of("answer", response.message().content(), "events", "finalized"))))
-                .addEdge(StateGraph.START, "draft")
-                // Routing is explicit: a draft always continues into the finalization node.
-                .addConditionalEdges("draft", ignored -> java.util.List.of("finalize"))
-                .addEdge("finalize", StateGraph.END)
+                .addNode("plan", (state, runtime) -> complete(model, "Create a compact research plan with three angles for this question. Do not answer it yet:\n" + state.get("question", String.class))
+                        .thenApply(text -> new StateUpdate(Map.of("plan", text, "events", "planned by " + provider))))
+                .addNode("research", (state, runtime) -> complete(model, "Draft evidence-oriented notes for the plan below. Clearly label assumptions and avoid inventing citations.\nQuestion: " + state.get("question", String.class) + "\nPlan:\n" + state.get("plan", String.class))
+                        .thenApply(text -> new StateUpdate(Map.of("research", text, "events", "researched"))))
+                .addNode("review", (state, runtime) -> complete(model, "Review these research notes. List unsupported claims, uncertainty, and the most important follow-up question.\n" + state.get("research", String.class))
+                        .thenApply(text -> new StateUpdate(Map.of("review", text, "events", "reviewed"))))
+                .addNode("synthesize", (state, runtime) -> complete(model, "Write a concise, useful answer to the question using the notes and review below. State uncertainty explicitly; do not claim sources you do not have.\nQuestion: " + state.get("question", String.class) + "\nNotes:\n" + state.get("research", String.class) + "\nReview:\n" + state.get("review", String.class))
+                        .thenApply(text -> new StateUpdate(Map.of("answer", text, "events", "synthesized"))))
+                .addEdge(StateGraph.START, "plan")
+                .addEdge("plan", "research")
+                .addEdge("research", "review")
+                .addEdge("review", "synthesize")
+                .addEdge("synthesize", StateGraph.END)
                 .compile();
 
-        // A thread ID groups checkpoints belonging to this workflow execution.
-        var result = graph.invoke(provider + "-example", GraphState.empty()).toCompletableFuture().join();
-        System.out.println(result.state().get("answer", String.class));
+        // A thread ID groups checkpoints belonging to this provider-specific execution.
+        var result = graph.invoke(provider + "-example", new GraphState(Map.of("question", prompt))).toCompletableFuture().join();
+        System.out.println("=== Research plan ===\n" + result.state().get("plan", String.class));
+        System.out.println("=== Quality review ===\n" + result.state().get("review", String.class));
+        System.out.println("=== Final answer ===\n" + result.state().get("answer", String.class));
         // Checkpoint history and Mermaid output make the execution and topology inspectable.
         System.out.println("checkpoints=" + graph.history(provider + "-example").size());
         System.out.println(graph.toMermaid());
+    }
+
+    private static java.util.concurrent.CompletionStage<String> complete(ChatModel model, String prompt) {
+        return model.complete(new ChatRequest(java.util.List.of(
+                        new ChatMessage(ChatMessageRole.SYSTEM, "You are a careful research assistant. Separate facts, assumptions, and uncertainty."),
+                        new ChatMessage(ChatMessageRole.USER, prompt))))
+                .thenApply(response -> response.message().content());
     }
 }

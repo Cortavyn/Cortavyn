@@ -6,6 +6,8 @@
     <packaging>pom</packaging>
     <name>Cortavyn Examples</name>
     <modules>
+        <module>deep</module>
+        <module>deep-support</module>
         <module>graph-support</module>
         <module>openai</module>
         <module>mistral</module>

@@ -20,7 +20,7 @@ public final class MistralGraphExample {
         GraphWorkflowExample.run(
                 "mistral",
                 builder.build(),
-                System.getProperty("example.prompt", "Explain durable agents in one sentence."));
+                System.getProperty("example.prompt", "How should a team introduce durable AI agents responsibly?"));
     }
 
     private static String required(String key) {

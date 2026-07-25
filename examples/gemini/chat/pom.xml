@@ -6,6 +6,7 @@
     <name>Cortavyn Example: Gemini Chat</name>
     <dependencies>
         <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-gemini</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-example-graph-support</artifactId><version>${project.version}</version></dependency>
     </dependencies>
     <profiles>
         <profile>

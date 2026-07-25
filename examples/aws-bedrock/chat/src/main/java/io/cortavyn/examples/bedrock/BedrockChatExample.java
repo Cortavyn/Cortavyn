@@ -1,20 +1,15 @@
 package io.cortavyn.examples.bedrock;
 
-import io.cortavyn.model.api.ChatMessage;
-import io.cortavyn.model.api.ChatMessageRole;
-import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.examples.graph.ResearchConversationExample;
 import io.cortavyn.provider.bedrock.BedrockChatModel;
-import java.util.List;
 
-/** Runs one Bedrock Converse request using the AWS default credential and region provider chains. */
+/** Runs a two-turn research and review conversation through Bedrock Converse. */
 public final class BedrockChatExample {
     private BedrockChatExample() { }
     public static void main(String[] args) {
-        String prompt = System.getProperty("example.prompt", "Explain durable agents in one sentence.");
+        String prompt = System.getProperty("example.prompt", "What trade-offs should a team consider when introducing durable AI agents?");
         try (BedrockChatModel model = BedrockChatModel.builder().modelId(requiredEnvironment("AWS_BEDROCK_MODEL")).build()) {
-            var response = model.complete(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, prompt))))
-                    .toCompletableFuture().join();
-            System.out.println(response.message().content());
+            ResearchConversationExample.run("aws-bedrock", model, prompt);
         }
     }
     private static String requiredEnvironment(String name) {

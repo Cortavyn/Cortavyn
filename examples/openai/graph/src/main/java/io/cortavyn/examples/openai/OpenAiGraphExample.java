@@ -18,7 +18,7 @@ public final class OpenAiGraphExample {
         GraphWorkflowExample.run(
                 "openai",
                 model,
-                System.getProperty("example.prompt", "Explain durable agents in one sentence."));
+                System.getProperty("example.prompt", "How should a team introduce durable AI agents responsibly?"));
     }
 
     private static String required(String key) {
