@@ -16,6 +16,10 @@ import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.StructuredOutputChatModel;
 import io.cortavyn.model.api.StructuredOutputSchema;
+import io.cortavyn.model.api.StreamingChatModel;
+import io.cortavyn.model.api.ChatStreamEvent;
+import io.cortavyn.model.api.ChatStreamPublishers;
+import io.cortavyn.model.api.OpenAiChatStreamAccumulator;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -27,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow.Publisher;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -35,7 +40,7 @@ import org.jspecify.annotations.Nullable;
  * <p>Azure routes chat requests through a deployment. Accordingly, {@code deploymentName}, not a
  * model name, is required. This mirrors LangChain's {@code AzureChatOpenAI} distinction.</p>
  */
-public final class AzureOpenAiChatModel implements StructuredOutputChatModel {
+public final class AzureOpenAiChatModel implements StructuredOutputChatModel, StreamingChatModel {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
     private static final Set<String> RESERVED_PARAMETERS = Set.of(
@@ -83,6 +88,13 @@ public final class AzureOpenAiChatModel implements StructuredOutputChatModel {
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
         return completeInternal(request, null);
     }
+    @Override public Publisher<ChatStreamEvent> stream(ChatRequest request) {
+        Objects.requireNonNull(request, "request must not be null"); var accumulator = new OpenAiChatStreamAccumulator();
+        HttpRequest httpRequest = HttpRequest.newBuilder(chatCompletionsUri).timeout(timeout).header("api-key", apiKey)
+                .header("Content-Type", "application/json").header("Accept", "text/event-stream").header("User-Agent", "cortavyn-java")
+                .POST(HttpRequest.BodyPublishers.ofString(toStreamRequestJson(request))).build();
+        return ChatStreamPublishers.fromLines(httpClient, httpRequest, response -> new AzureOpenAiHttpException(response.statusCode(), ""), accumulator::accept, accumulator::complete);
+    }
     @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
         return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
     }
@@ -102,6 +114,7 @@ public final class AzureOpenAiChatModel implements StructuredOutputChatModel {
     String toRequestJson(ChatRequest request) {
         return toRequestJson(request, null);
     }
+    String toStreamRequestJson(ChatRequest request) { try { ObjectNode root = (ObjectNode) JSON.readTree(toRequestJson(request)); root.put("stream", true); return JSON.writeValueAsString(root); } catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Azure OpenAI streaming request", exception); } }
     String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode();
         if (temperature != null) root.put("temperature", temperature);

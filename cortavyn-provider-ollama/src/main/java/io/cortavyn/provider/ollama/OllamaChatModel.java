@@ -15,6 +15,9 @@ import io.cortavyn.model.api.ReasoningContent;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import io.cortavyn.model.api.StreamingChatModel;
+import io.cortavyn.model.api.ChatStreamEvent;
+import io.cortavyn.model.api.ChatStreamPublishers;
 import java.util.List;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -24,10 +27,11 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow.Publisher;
 import org.jspecify.annotations.Nullable;
 
 /** An Ollama {@code /api/chat} adapter using a non-streaming response per portable request. */
-public final class OllamaChatModel implements ChatModel {
+public final class OllamaChatModel implements ChatModel, StreamingChatModel {
     private static final URI DEFAULT_BASE_URL = URI.create("http://localhost:11434/");
     private static final String DEFAULT_MODEL_NAME = "llama3.2";
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(5);
@@ -53,6 +57,11 @@ public final class OllamaChatModel implements ChatModel {
                 .header("User-Agent", "cortavyn-java").POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request))).build();
         return httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString()).thenApply(this::toChatResponse);
     }
+    @Override public Publisher<ChatStreamEvent> stream(ChatRequest request) {
+        Objects.requireNonNull(request, "request must not be null"); var accumulator = new OllamaStreamAccumulator();
+        HttpRequest httpRequest = HttpRequest.newBuilder(chatUri).timeout(timeout).header("Content-Type", "application/json").header("Accept", "application/x-ndjson").header("User-Agent", "cortavyn-java").POST(HttpRequest.BodyPublishers.ofString(toStreamRequestJson(request))).build();
+        return ChatStreamPublishers.fromLines(httpClient, httpRequest, response -> new OllamaHttpException(response.statusCode(), ""), accumulator::accept, accumulator::complete);
+    }
 
     String toRequestJson(ChatRequest request) {
         ObjectNode root = JSON.createObjectNode(); root.put("model", modelName); root.put("stream", false);
@@ -70,6 +79,7 @@ public final class OllamaChatModel implements ChatModel {
         try { return JSON.writeValueAsString(root); }
         catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Ollama request", exception); }
     }
+    String toStreamRequestJson(ChatRequest request) { try { ObjectNode root = (ObjectNode) JSON.readTree(toRequestJson(request)); root.put("stream", true); return JSON.writeValueAsString(root); } catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Ollama streaming request", exception); } }
 
     private ChatResponse toChatResponse(HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) throw new OllamaHttpException(response.statusCode(), response.body());

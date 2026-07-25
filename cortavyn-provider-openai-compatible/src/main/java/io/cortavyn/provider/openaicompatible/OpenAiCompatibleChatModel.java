@@ -16,6 +16,10 @@ import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.StructuredOutputChatModel;
 import io.cortavyn.model.api.StructuredOutputSchema;
+import io.cortavyn.model.api.StreamingChatModel;
+import io.cortavyn.model.api.ChatStreamEvent;
+import io.cortavyn.model.api.ChatStreamPublishers;
+import io.cortavyn.model.api.OpenAiChatStreamAccumulator;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,10 +30,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow.Publisher;
 import org.jspecify.annotations.Nullable;
 
 /** Portable adapter for endpoints implementing OpenAI's Chat Completions wire format. */
-public final class OpenAiCompatibleChatModel implements StructuredOutputChatModel {
+public final class OpenAiCompatibleChatModel implements StructuredOutputChatModel, StreamingChatModel {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
     private final HttpClient httpClient;
@@ -61,6 +66,14 @@ public final class OpenAiCompatibleChatModel implements StructuredOutputChatMode
     }
     public static Builder builder() { return new Builder(); }
     @Override public CompletionStage<ChatResponse> complete(ChatRequest request) { return completeInternal(request, null); }
+    @Override public Publisher<ChatStreamEvent> stream(ChatRequest request) {
+        Objects.requireNonNull(request, "request must not be null"); var accumulator = new OpenAiChatStreamAccumulator();
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri).timeout(timeout).header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json").header("Accept", "text/event-stream")
+                .POST(HttpRequest.BodyPublishers.ofString(toStreamRequestJson(request)));
+        headers.forEach(builder::header);
+        return ChatStreamPublishers.fromLines(httpClient, builder.build(), response -> new OpenAiCompatibleHttpException(response.statusCode(), ""), accumulator::accept, accumulator::complete);
+    }
     @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
         return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
     }
@@ -75,6 +88,7 @@ public final class OpenAiCompatibleChatModel implements StructuredOutputChatMode
     String toRequestJson(ChatRequest request) {
         return toRequestJson(request, null);
     }
+    String toStreamRequestJson(ChatRequest request) { try { ObjectNode root = (ObjectNode) JSON.readTree(toRequestJson(request)); root.put("stream", true); return JSON.writeValueAsString(root); } catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize streaming request", exception); } }
     String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode().put("model", modelName);
         if (temperature != null) root.put("temperature", temperature);

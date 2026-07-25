@@ -10,10 +10,16 @@ import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.StreamingChatModel;
+import io.cortavyn.model.api.ChatStreamEvent;
+import io.cortavyn.model.api.ChatTextDelta;
+import io.cortavyn.model.api.ChatCompletion;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow.Publisher;
+import java.util.concurrent.SubmissionPublisher;
 import org.jspecify.annotations.Nullable;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.document.Document;
@@ -24,6 +30,8 @@ import software.amazon.awssdk.services.bedrockruntime.model.ContentBlock;
 import software.amazon.awssdk.services.bedrockruntime.model.ConversationRole;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.ConverseResponse;
+import software.amazon.awssdk.services.bedrockruntime.model.ConverseStreamRequest;
+import software.amazon.awssdk.services.bedrockruntime.model.ConverseStreamResponseHandler;
 import software.amazon.awssdk.services.bedrockruntime.model.InferenceConfiguration;
 import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import software.amazon.awssdk.services.bedrockruntime.model.SystemContentBlock;
@@ -35,7 +43,7 @@ import software.amazon.awssdk.services.bedrockruntime.model.SystemContentBlock;
  * configured. This follows LangChain's {@code ChatBedrockConverse} choice of the provider-neutral
  * Converse API rather than individual model invocation formats.</p>
  */
-public final class BedrockChatModel implements ChatModel, AutoCloseable {
+public final class BedrockChatModel implements ChatModel, StreamingChatModel, AutoCloseable {
     private final BedrockRuntimeAsyncClient client;
     private final String modelId;
     private final @Nullable Integer maxTokens;
@@ -65,6 +73,20 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
         Objects.requireNonNull(request, "request must not be null");
         return client.converse(toConverseRequest(request)).thenApply(BedrockChatModel::toChatResponse);
+    }
+
+    @Override public Publisher<ChatStreamEvent> stream(ChatRequest request) {
+        Objects.requireNonNull(request, "request must not be null");
+        ConverseRequest source = toConverseRequest(request);
+        ConverseStreamRequest wire = ConverseStreamRequest.builder().modelId(source.modelId()).messages(source.messages()).system(source.system()).inferenceConfig(source.inferenceConfig()).toolConfig(source.toolConfig()).additionalModelRequestFields(source.additionalModelRequestFields()).build();
+        SubmissionPublisher<ChatStreamEvent> publisher = new SubmissionPublisher<>(); StringBuilder text = new StringBuilder();
+        ConverseStreamResponseHandler handler = ConverseStreamResponseHandler.builder().subscriber(new ConverseStreamResponseHandler.Visitor() {
+            @Override public void visitContentBlockDelta(software.amazon.awssdk.services.bedrockruntime.model.ContentBlockDeltaEvent event) {
+                String delta = event.delta().text(); if (delta != null && !delta.isEmpty()) { text.append(delta); publisher.submit(new ChatTextDelta(delta)); }
+            }
+        }).onComplete(() -> { publisher.submit(new ChatCompletion(new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, text.toString()), ChatResponseMetadata.empty(), java.util.Map.of()))); publisher.close(); }).onError(publisher::closeExceptionally).build();
+        var streamFuture = client.converseStream(wire, handler);
+        return publisher;
     }
 
     ConverseRequest toConverseRequest(ChatRequest request) {

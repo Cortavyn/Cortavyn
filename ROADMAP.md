@@ -54,13 +54,14 @@ This document tracks the remaining work needed to make Cortavyn's chat-model lay
 
 ### Streaming
 
-`StreamingChatModel` and stream event types exist, but no adapter implements them.
+`StreamingChatModel` is implemented by the native chat adapters. HTTP SSE, Ollama NDJSON, and
+Bedrock ConverseStream are normalized into portable stream events and a final completion event.
 
-- [ ] Text deltas
-- [ ] Tool-call argument deltas
-- [ ] Reasoning deltas where supported
-- [ ] Final usage and finish metadata
-- [ ] OpenAI, Anthropic, Gemini, Bedrock, Mistral, Ollama, and compatible-provider implementations
+- [x] Text deltas
+- [x] Tool-call argument deltas for OpenAI-compatible, Anthropic, and Gemini streams
+- [x] Reasoning deltas where supported
+- [x] Final usage and finish metadata where provided by the provider stream
+- [x] OpenAI, Anthropic, Gemini, Bedrock, Mistral, Ollama, and compatible-provider implementations
 - [ ] Cancellation and back-pressure tests
 
 ### Structured output

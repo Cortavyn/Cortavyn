@@ -17,6 +17,10 @@ import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
 import io.cortavyn.model.api.StructuredOutputChatModel;
 import io.cortavyn.model.api.StructuredOutputSchema;
+import io.cortavyn.model.api.StreamingChatModel;
+import io.cortavyn.model.api.ChatStreamEvent;
+import io.cortavyn.model.api.ChatStreamPublishers;
+import io.cortavyn.model.api.OpenAiChatStreamAccumulator;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -27,10 +31,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow.Publisher;
 import org.jspecify.annotations.Nullable;
 
 /** A Mistral chat-completions adapter with Mistral's default generation parameters. */
-public final class MistralChatModel implements StructuredOutputChatModel {
+public final class MistralChatModel implements StructuredOutputChatModel, StreamingChatModel {
     private static final URI DEFAULT_BASE_URL = URI.create("https://api.mistral.ai/v1/");
     private static final String DEFAULT_MODEL_NAME = "mistral-small";
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(2);
@@ -82,6 +87,13 @@ public final class MistralChatModel implements StructuredOutputChatModel {
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
         return completeInternal(request, null);
     }
+    @Override public Publisher<ChatStreamEvent> stream(ChatRequest request) {
+        Objects.requireNonNull(request, "request must not be null"); var accumulator = new OpenAiChatStreamAccumulator();
+        HttpRequest httpRequest = HttpRequest.newBuilder(chatCompletionsUri).timeout(timeout).header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json").header("Accept", "text/event-stream").header("User-Agent", "cortavyn-java")
+                .POST(HttpRequest.BodyPublishers.ofString(toStreamRequestJson(request))).build();
+        return ChatStreamPublishers.fromLines(httpClient, httpRequest, response -> new MistralHttpException(response.statusCode(), ""), accumulator::accept, accumulator::complete);
+    }
     @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
         return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
     }
@@ -101,6 +113,7 @@ public final class MistralChatModel implements StructuredOutputChatModel {
     String toRequestJson(ChatRequest request) {
         return toRequestJson(request, null);
     }
+    String toStreamRequestJson(ChatRequest request) { try { ObjectNode root = (ObjectNode) JSON.readTree(toRequestJson(request)); root.put("stream", true); return JSON.writeValueAsString(root); } catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Mistral streaming request", exception); } }
     String toRequestJson(ChatRequest request, @Nullable StructuredOutputSchema schema) {
         ObjectNode root = JSON.createObjectNode();
         root.put("model", modelName);

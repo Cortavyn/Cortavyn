@@ -15,6 +15,10 @@ import io.cortavyn.model.api.ReasoningContent;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import io.cortavyn.model.api.StreamingChatModel;
+import io.cortavyn.model.api.ChatStreamEvent;
+import io.cortavyn.model.api.ChatStreamPublishers;
+import io.cortavyn.model.api.OpenAiChatStreamAccumulator;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -25,10 +29,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow.Publisher;
 import org.jspecify.annotations.Nullable;
 
 /** An OpenRouter chat-completions adapter with optional application attribution headers. */
-public final class OpenRouterChatModel implements ChatModel {
+public final class OpenRouterChatModel implements ChatModel, StreamingChatModel {
     private static final URI DEFAULT_BASE_URL = URI.create("https://openrouter.ai/api/v1/");
     private static final String DEFAULT_MODEL_NAME = "openrouter/free";
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(1);
@@ -95,6 +100,14 @@ public final class OpenRouterChatModel implements ChatModel {
         if (!appCategories.isEmpty()) requestBuilder.header("X-OpenRouter-Categories", String.join(",", appCategories));
         return httpClient.sendAsync(requestBuilder.build(), HttpResponse.BodyHandlers.ofString()).thenApply(this::toChatResponse);
     }
+    @Override public Publisher<ChatStreamEvent> stream(ChatRequest request) {
+        Objects.requireNonNull(request, "request must not be null"); var accumulator = new OpenAiChatStreamAccumulator();
+        HttpRequest.Builder builder = HttpRequest.newBuilder(chatCompletionsUri).timeout(timeout).header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json").header("Accept", "text/event-stream").header("User-Agent", "cortavyn-java")
+                .POST(HttpRequest.BodyPublishers.ofString(toStreamRequestJson(request)));
+        if (siteUrl != null) builder.header("HTTP-Referer", siteUrl); if (appTitle != null) builder.header("X-OpenRouter-Title", appTitle); if (!appCategories.isEmpty()) builder.header("X-OpenRouter-Categories", String.join(",", appCategories));
+        return ChatStreamPublishers.fromLines(httpClient, builder.build(), response -> new OpenRouterHttpException(response.statusCode(), ""), accumulator::accept, accumulator::complete);
+    }
 
     String toRequestJson(ChatRequest request) {
         ObjectNode root = JSON.createObjectNode();
@@ -124,6 +137,7 @@ public final class OpenRouterChatModel implements ChatModel {
             throw new IllegalStateException("Unable to serialize OpenRouter request", exception);
         }
     }
+    String toStreamRequestJson(ChatRequest request) { try { ObjectNode root = (ObjectNode) JSON.readTree(toRequestJson(request)); root.put("stream", true); return JSON.writeValueAsString(root); } catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize OpenRouter streaming request", exception); } }
 
     private ChatResponse toChatResponse(HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) throw new OpenRouterHttpException(response.statusCode(), response.body());

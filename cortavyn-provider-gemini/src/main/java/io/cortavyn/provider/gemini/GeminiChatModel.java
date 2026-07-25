@@ -17,6 +17,9 @@ import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
 import io.cortavyn.model.api.StructuredOutputChatModel;
 import io.cortavyn.model.api.StructuredOutputSchema;
+import io.cortavyn.model.api.StreamingChatModel;
+import io.cortavyn.model.api.ChatStreamEvent;
+import io.cortavyn.model.api.ChatStreamPublishers;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,10 +29,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow.Publisher;
 import org.jspecify.annotations.Nullable;
 
 /** A Gemini Developer API adapter following LangChain's system-instruction and role mapping. */
-public final class GeminiChatModel implements StructuredOutputChatModel {
+public final class GeminiChatModel implements StructuredOutputChatModel, StreamingChatModel {
     private static final URI DEFAULT_BASE_URL = URI.create("https://generativelanguage.googleapis.com/v1beta/");
     private static final String DEFAULT_MODEL_NAME = "gemini-2.5-flash";
     private static final Duration DEFAULT_TIMEOUT = Duration.ofMinutes(1);
@@ -71,6 +75,12 @@ public final class GeminiChatModel implements StructuredOutputChatModel {
     @Override
     public CompletionStage<ChatResponse> complete(ChatRequest request) {
         return completeInternal(request, null);
+    }
+    @Override public Publisher<ChatStreamEvent> stream(ChatRequest request) {
+        Objects.requireNonNull(request, "request must not be null"); var accumulator = new GeminiStreamAccumulator(modelName);
+        URI streamUri = URI.create(generateContentUri.toString().replace(":generateContent", ":streamGenerateContent") + "?alt=sse");
+        HttpRequest httpRequest = HttpRequest.newBuilder(streamUri).timeout(timeout).header("x-goog-api-key", apiKey).header("Content-Type", "application/json").header("Accept", "text/event-stream").header("User-Agent", "cortavyn-java").POST(HttpRequest.BodyPublishers.ofString(toRequestJson(request))).build();
+        return ChatStreamPublishers.fromLines(httpClient, httpRequest, response -> new GeminiHttpException(response.statusCode(), ""), accumulator::accept, accumulator::complete);
     }
     @Override public CompletionStage<ChatResponse> complete(ChatRequest request, StructuredOutputSchema schema) {
         return completeInternal(request, Objects.requireNonNull(schema, "schema must not be null"));
