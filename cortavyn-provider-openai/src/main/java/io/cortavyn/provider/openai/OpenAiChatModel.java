@@ -208,40 +208,54 @@ public final class OpenAiChatModel implements ChatModel {
         private Builder() {
         }
 
+        /** @param httpClient HTTP client used for requests; defaults to a new JDK client */
         public Builder httpClient(HttpClient httpClient) {
             this.httpClient = Objects.requireNonNull(httpClient, "httpClient must not be null");
             return this;
         }
 
+        /** @param baseUrl API base URI, useful for an OpenAI-compatible proxy; defaults to OpenAI's v1 endpoint */
         public Builder baseUrl(URI baseUrl) {
             this.baseUrl = Objects.requireNonNull(baseUrl, "baseUrl must not be null");
             return this;
         }
 
+        /** @param apiKey OpenAI API key sent as a Bearer credential; required */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
             return this;
         }
 
+        /** @param modelName Chat Completions model identifier; defaults to the adapter's documented default */
         public Builder modelName(String modelName) {
             this.modelName = modelName;
             return this;
         }
 
+        /** @param timeout per-request deadline; defaults to two minutes */
         public Builder timeout(Duration timeout) {
             this.timeout = timeout;
             return this;
         }
 
+        /** @param temperature sampling randomness in OpenAI's accepted range */
         public Builder temperature(double temperature) { this.temperature = temperature; return this; }
+        /** @param maxTokens maximum generated tokens for this completion */
         public Builder maxTokens(int maxTokens) { this.maxTokens = maxTokens; return this; }
+        /** @param topP nucleus-sampling probability; use instead of temperature when appropriate */
         public Builder topP(double topP) { this.topP = topP; return this; }
+        /** @param frequencyPenalty penalty for repeatedly used tokens */
         public Builder frequencyPenalty(double frequencyPenalty) { this.frequencyPenalty = frequencyPenalty; return this; }
+        /** @param presencePenalty penalty that encourages introducing new topics */
         public Builder presencePenalty(double presencePenalty) { this.presencePenalty = presencePenalty; return this; }
+        /** @param seed best-effort deterministic sampling seed */
         public Builder seed(int seed) { this.seed = seed; return this; }
+        /** @param stopSequences sequences that terminate generation early */
         public Builder stopSequences(List<String> stopSequences) { this.stopSequences = List.copyOf(stopSequences); return this; }
+        /** @param additionalParameters provider fields not represented by the portable API; reserved fields are rejected */
         public Builder additionalParameters(Map<String, Object> additionalParameters) { this.additionalParameters = Map.copyOf(additionalParameters); return this; }
 
+        /** @return an immutable, thread-safe OpenAI Chat Completions adapter */
         public OpenAiChatModel build() {
             return new OpenAiChatModel(this);
         }

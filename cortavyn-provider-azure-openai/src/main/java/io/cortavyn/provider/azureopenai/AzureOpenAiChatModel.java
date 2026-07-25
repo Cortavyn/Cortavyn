@@ -172,11 +172,17 @@ public final class AzureOpenAiChatModel implements ChatModel {
         private @Nullable String reasoningEffort;
         private Map<String, Object> additionalParameters = Map.of();
         private Builder() { }
+        /** @param value HTTP client used for requests */
         public Builder httpClient(HttpClient value) { httpClient = Objects.requireNonNull(value); return this; }
+        /** @param value Azure resource endpoint, without a deployment path */
         public Builder endpoint(URI value) { endpoint = Objects.requireNonNull(value); return this; }
+        /** @param value Azure OpenAI API key; required */
         public Builder apiKey(String value) { apiKey = value; return this; }
+        /** @param value Azure deployment name, which selects the deployed model; required */
         public Builder deploymentName(String value) { deploymentName = value; return this; }
+        /** @param value Azure REST API version used as a query parameter; required */
         public Builder apiVersion(String value) { apiVersion = value; return this; }
+        /** @param value per-request deadline */
         public Builder timeout(Duration value) { timeout = value; return this; }
         public Builder temperature(double value) { temperature = value; return this; }
         public Builder maxTokens(int value) { maxTokens = value; return this; }
@@ -188,6 +194,7 @@ public final class AzureOpenAiChatModel implements ChatModel {
         /** Sets the reasoning effort for Azure OpenAI reasoning deployments. */
         public Builder reasoningEffort(String value) { reasoningEffort = requireNonBlank(value, "reasoningEffort"); return this; }
         public Builder additionalParameters(Map<String, Object> value) { additionalParameters = Map.copyOf(value); return this; }
+        /** @return an immutable Azure OpenAI Chat Completions adapter */
         public AzureOpenAiChatModel build() { return new AzureOpenAiChatModel(this); }
     }
 }
