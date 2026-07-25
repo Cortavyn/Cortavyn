@@ -28,6 +28,19 @@ All production packages are `@NullMarked` with [JSpecify 1.0.0](https://jspecify
 
 The versioned [Structurizr C4 model](architecture/workspace.dsl) documents module responsibilities and dependency directions. The `cortavyn-architecture` module enforces those directions with ArchUnit as part of `mvn test`.
 
+## Typed tools
+
+`ChatTool.typed` derives a provider JSON Schema from a Java `record` and converts a tool call back to that type. `@ToolName` and `@ToolDescription` are optional convenience metadata; the explicit overload accepts the name and description directly. `@Nullable` record components are not required by the generated schema.
+
+```java
+@ToolName("get_weather")
+@ToolDescription("Gets the current weather for a city.")
+record WeatherArguments(@ToolDescription("The city to look up.") String city) { }
+
+var weather = ChatTool.typed(WeatherArguments.class, arguments ->
+        CompletableFuture.completedFuture(ToolExecutionResult.success(weatherFor(arguments.city()))));
+```
+
 ## Build
 
 Requires Java 25 and Maven 3.9+.
