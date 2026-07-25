@@ -20,6 +20,10 @@ All production packages are `@NullMarked` with [JSpecify 1.0.0](https://jspecify
 
 `graph`, `chat`, and provider modules depend only on the APIs they need. `deep` composes `graph` and `model-api`; no core module depends on a provider SDK.
 
+## Roadmap
+
+[ROADMAP.md](ROADMAP.md) tracks the remaining chat-model capabilities and their implementation status.
+
 ## Build
 
 Requires Java 25 and Maven 3.9+.
