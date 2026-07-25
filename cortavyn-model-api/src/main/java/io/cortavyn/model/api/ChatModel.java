@@ -5,6 +5,8 @@ import java.util.concurrent.CompletionStage;
 /** An asynchronous, provider-neutral chat-model contract. */
 @FunctionalInterface
 public interface ChatModel {
+    /** @param type record type that describes the requested response JSON */
+    default <T> StructuredChatModel<T> withStructuredOutput(Class<T> type) { return new StructuredChatModel<>(this, type); }
     /**
      * Requests one assistant response.
      *
