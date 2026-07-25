@@ -36,15 +36,19 @@ This document tracks the remaining work needed to make Cortavyn's chat-model lay
 2. A two-step fake HTTP/provider test verifies model tool call -> application tool result -> final model response.
 3. Provider-specific reasoning/signature state survives the same loop where required.
 
-### Tool-calling agent loop
+### LangChain-style chat agent
 
-**Goal:** Add a small `ToolCallingChatAgent` in `cortavyn-chat` that repeatedly invokes a `ChatModel`, executes application-owned `ToolExecutor` instances, appends results, and stops on a final assistant response.
+**Goal:** Add a public `ChatAgent` in `cortavyn-chat`, comparable to LangChain's `createAgent({ model, tools })`. It wraps an existing `ChatModel`, executes application-owned tools, and continues the conversation until the model returns a final assistant response. Graph and deep-agent integrations should reuse this execution core rather than introduce a second tool loop.
 
-- [ ] Tool registry and lookup by tool name
-- [ ] Parallel execution policy for independent calls
-- [ ] Maximum iteration and timeout limits
-- [ ] Unknown tool and tool-failure result policy
-- [ ] Integration tests using a scripted chat model
+- [x] `ChatAgent` implements `ChatSession`
+- [x] Tool registry and lookup by tool name
+- [x] Parallel execution of calls in one model response
+- [x] Maximum iteration limit
+- [x] Unknown tool and tool-failure result policy
+- [x] Integration test using a scripted chat model
+- [ ] `ToolRuntime`: run context, user context, persistent store, and progress writer
+- [ ] Structured and multimodal tool results
+- [ ] Graph `ToolNode` and state-update commands
 
 ## P1 — Complete chat-model interaction surface
 

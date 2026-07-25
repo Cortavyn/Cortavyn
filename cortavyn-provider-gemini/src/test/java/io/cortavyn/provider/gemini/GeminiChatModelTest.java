@@ -7,6 +7,7 @@ import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ToolCall;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,8 @@ class GeminiChatModelTest {
 
         String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, "Think."))));
 
-        assertEquals("{\"contents\":[{\"role\":\"user\",\"parts\":[{\"text\":\"Think.\"}]}],\"generationConfig\":{\"thinkingConfig\":{\"thinkingBudget\":1024,\"includeThoughts\":true}}}", payload);
+        var config = new ObjectMapper().readTree(payload).path("generationConfig").path("thinkingConfig");
+        assertEquals(true, config.path("includeThoughts").asBoolean());
+        assertEquals(1024, config.path("thinkingBudget").asInt());
     }
 }

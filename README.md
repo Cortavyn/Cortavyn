@@ -38,6 +38,7 @@ The examples are executable smoke-test applications. They are compiled by the no
 
 ```shell
 OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-chat -am package -Prun-example
+OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-tool-agent -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-chat -am package -Prun-example
 GEMINI_API_KEY=... mvn -pl :cortavyn-example-gemini-chat -am package -Prun-example
 OPENROUTER_API_KEY=... mvn -pl :cortavyn-example-openrouter-chat -am package -Prun-example

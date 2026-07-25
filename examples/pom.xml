@@ -7,6 +7,7 @@
     <name>Cortavyn Examples</name>
     <modules>
         <module>openai-chat</module>
+        <module>openai-tool-agent</module>
         <module>mistral-chat</module>
         <module>gemini-chat</module>
         <module>openrouter-chat</module>
