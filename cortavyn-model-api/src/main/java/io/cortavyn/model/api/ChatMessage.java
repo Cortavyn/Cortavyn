@@ -55,5 +55,11 @@ public record ChatMessage(
     public static ChatMessage toolResult(String toolCallId, String content) {
         return new ChatMessage(ChatMessageRole.TOOL, content, List.of(new TextContent(content)), toolCallId, List.of(), Map.of());
     }
+    /** Creates a tool-result message preserving structured or multimodal result blocks. */
+    public static ChatMessage toolResult(String toolCallId, List<ChatContent> contentBlocks, boolean error, Map<String, Object> metadata) {
+        Map<String, Object> resultMetadata = new java.util.LinkedHashMap<>(metadata);
+        resultMetadata.put("error", error);
+        return new ChatMessage(ChatMessageRole.TOOL, textContent(contentBlocks), contentBlocks, toolCallId, List.of(), resultMetadata);
+    }
     private static String textContent(List<ChatContent> contentBlocks) { return contentBlocks.stream().filter(TextContent.class::isInstance).map(TextContent.class::cast).map(TextContent::text).reduce("", String::concat); }
 }

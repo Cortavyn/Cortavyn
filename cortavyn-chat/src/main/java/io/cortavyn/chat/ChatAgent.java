@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A LangChain-style chat agent: it invokes a chat model, executes requested application tools,
@@ -23,10 +24,12 @@ public final class ChatAgent implements ChatSession {
     private final Map<String, ToolExecutor> tools;
     private final List<ToolDefinition> definitions;
     private final int maxIterations;
+    private final ToolRuntime runtime;
 
     private ChatAgent(Builder builder) {
         model = Objects.requireNonNull(builder.model, "model must not be null");
         maxIterations = builder.maxIterations;
+        runtime = builder.runtime == null ? ToolRuntime.ephemeral("chat-agent") : builder.runtime;
         if (maxIterations <= 0) throw new IllegalArgumentException("maxIterations must be positive");
         Map<String, ToolExecutor> executors = new HashMap<>();
         List<ToolDefinition> toolDefinitions = new ArrayList<>();
@@ -59,7 +62,7 @@ public final class ChatAgent implements ChatSession {
                     List<ChatMessage> updated = new ArrayList<>(messages);
                     updated.add(response.message());
                     if (response.message().toolCalls().isEmpty()) return CompletableFuture.completedFuture(new Conversation(conversationId, updated));
-                    return execute(response.message().toolCalls()).thenCompose(results -> {
+            return execute(response.message().toolCalls()).thenCompose(results -> {
                         updated.addAll(results);
                         return run(conversationId, updated, iteration + 1);
                     });
@@ -76,8 +79,10 @@ public final class ChatAgent implements ChatSession {
         ToolExecutor executor = tools.get(call.name());
         if (executor == null) return CompletableFuture.completedFuture(ChatMessage.toolResult(call.id(), "Unknown tool: " + call.name()));
         try {
-            return executor.execute(call)
-                    .handle((result, failure) -> ChatMessage.toolResult(call.id(), failure == null ? result.content() : "Tool failed: " + failure.getMessage()));
+            return executor.execute(call, runtime)
+                    .handle((result, failure) -> failure == null
+                            ? ChatMessage.toolResult(call.id(), result.contentBlocks(), result.error(), result.metadata())
+                            : ChatMessage.toolResult(call.id(), "Tool failed: " + failure.getMessage()));
         } catch (RuntimeException failure) {
             return CompletableFuture.completedFuture(ChatMessage.toolResult(call.id(), "Tool failed: " + failure.getMessage()));
         }
@@ -87,10 +92,12 @@ public final class ChatAgent implements ChatSession {
         private final ChatModel model;
         private List<ChatTool> tools = List.of();
         private int maxIterations = 10;
+        private @Nullable ToolRuntime runtime;
 
         private Builder(ChatModel model) { this.model = Objects.requireNonNull(model, "model must not be null"); }
         public Builder tools(ChatTool... value) { tools = List.of(value); return this; }
         public Builder maxIterations(int value) { maxIterations = value; return this; }
+        public Builder runtime(ToolRuntime value) { runtime = Objects.requireNonNull(value, "runtime must not be null"); return this; }
         public ChatAgent build() { return new ChatAgent(this); }
     }
 }

@@ -41,6 +41,8 @@ var weather = ChatTool.typed(WeatherArguments.class, arguments ->
         CompletableFuture.completedFuture(ToolExecutionResult.success(weatherFor(arguments.city()))));
 ```
 
+Runtime-aware tools additionally receive `ToolRuntime` with application context, an injected `ToolStore`, and a `ToolProgressWriter`. Configure it once on `ChatAgent.builder(model).runtime(runtime)`.
+
 ## Build
 
 Requires Java 25 and Maven 3.9+.

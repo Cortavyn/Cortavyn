@@ -11,6 +11,7 @@ import io.cortavyn.model.api.ToolDefinition;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class ChatAgentTest {
@@ -28,6 +29,24 @@ class ChatAgentTest {
         assertEquals(ChatMessageRole.TOOL, result.messages().get(2).role());
         assertEquals("sunny", result.messages().get(2).content());
         assertEquals("It is sunny.", result.messages().get(3).content());
+    }
+
+    @Test
+    void passesConfiguredRuntimeToRuntimeAwareTools() {
+        var observedRuntime = new AtomicReference<ToolRuntime>();
+        ToolRuntime runtime = new ToolRuntime("run-42", Map.of("tenant", "acme"), new InMemoryToolStore(), ToolProgressWriter.noop());
+        var agent = ChatAgent.builder(new ScriptedModel())
+                .runtime(runtime)
+                .tools(ChatTool.withRuntime(new ToolDefinition("weather", "Gets weather.", Map.of()), (call, toolRuntime) -> {
+                    observedRuntime.set(toolRuntime);
+                    return CompletableFuture.completedFuture(ToolExecutionResult.success("sunny"));
+                }))
+                .build();
+
+        agent.reply(new Conversation("conversation-1", List.of()), new ChatMessage(ChatMessageRole.USER, "Weather?"))
+                .toCompletableFuture().join();
+
+        assertEquals(runtime, observedRuntime.get());
     }
 
     private static final class ScriptedModel implements ChatModel {

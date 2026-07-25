@@ -46,9 +46,9 @@ This document tracks the remaining work needed to make Cortavyn's chat-model lay
 - [x] Maximum iteration limit
 - [x] Unknown tool and tool-failure result policy
 - [x] Integration test using a scripted chat model
-- [ ] `ToolRuntime`: run context, user context, persistent store, and progress writer
-- [ ] Structured and multimodal tool results
-- [ ] Graph `ToolNode` and state-update commands
+- [x] `ToolRuntime`: run context, user context, injected store, and progress writer
+- [x] Structured and multimodal tool-result contract
+- [x] Graph `ToolNode` and state-update commands
 
 ## P1 — Complete chat-model interaction surface
 

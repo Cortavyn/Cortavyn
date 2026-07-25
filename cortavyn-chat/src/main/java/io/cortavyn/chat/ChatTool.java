@@ -28,8 +28,42 @@ public record ChatTool(ToolDefinition definition, ToolExecutor executor) {
         });
     }
 
+    /** Creates a tool whose executor receives the current agent runtime. */
+    public static ChatTool withRuntime(ToolDefinition definition, RuntimeToolExecutor executor) {
+        Objects.requireNonNull(executor, "executor must not be null");
+        return new ChatTool(definition, new ToolExecutor() {
+            @Override public java.util.concurrent.CompletionStage<ToolExecutionResult> execute(io.cortavyn.model.api.ToolCall call) { return executor.execute(call, ToolRuntime.ephemeral(call.id())); }
+            @Override public java.util.concurrent.CompletionStage<ToolExecutionResult> execute(io.cortavyn.model.api.ToolCall call, ToolRuntime runtime) { return executor.execute(call, runtime); }
+        });
+    }
+
+    /** Creates a typed tool whose executor receives the current agent runtime. */
+    public static <T> ChatTool typed(String name, String description, Class<T> argumentsType, RuntimeTypedToolExecutor<T> executor) {
+        Objects.requireNonNull(argumentsType, "argumentsType must not be null");
+        Objects.requireNonNull(executor, "executor must not be null");
+        ToolDefinition definition = new ToolDefinition(name, description, TypedToolSchema.forRecord(argumentsType));
+        return withRuntime(definition, (call, runtime) -> {
+            try {
+                return executor.execute(OBJECT_MAPPER.convertValue(call.arguments(), argumentsType), runtime);
+            } catch (IllegalArgumentException exception) {
+                return CompletableFuture.completedFuture(ToolExecutionResult.failure("Invalid arguments for tool '" + name + "': " + exception.getMessage()));
+            }
+        });
+    }
+
     /** Creates a tool using {@link ToolName} and {@link ToolDescription} on its argument record. */
     public static <T> ChatTool typed(Class<T> argumentsType, TypedToolExecutor<T> executor) {
+        Objects.requireNonNull(argumentsType, "argumentsType must not be null");
+        ToolName name = argumentsType.getAnnotation(ToolName.class);
+        ToolDescription description = argumentsType.getAnnotation(ToolDescription.class);
+        if (name == null || description == null) {
+            throw new IllegalArgumentException("annotated typed tools require @ToolName and @ToolDescription on " + argumentsType.getName());
+        }
+        return typed(name.value(), description.value(), argumentsType, executor);
+    }
+
+    /** Creates a runtime-aware typed tool using annotations on its argument record. */
+    public static <T> ChatTool typed(Class<T> argumentsType, RuntimeTypedToolExecutor<T> executor) {
         Objects.requireNonNull(argumentsType, "argumentsType must not be null");
         ToolName name = argumentsType.getAnnotation(ToolName.class);
         ToolDescription description = argumentsType.getAnnotation(ToolDescription.class);
