@@ -65,6 +65,7 @@ public final class OllamaChatModel implements ChatModel {
             ObjectNode wireMessage = messages.addObject();
             wireMessage.put("role", switch (message.role()) { case SYSTEM -> "system"; case USER -> "user"; case ASSISTANT -> "assistant"; case TOOL -> "tool"; });
             wireMessage.put("content", message.content());
+            if (!message.toolCalls().isEmpty()) { ArrayNode calls = wireMessage.putArray("tool_calls"); for (ToolCall call : message.toolCalls()) calls.addObject().putObject("function").put("name", call.name()).putPOJO("arguments", call.arguments()); }
         }
         try { return JSON.writeValueAsString(root); }
         catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Ollama request", exception); }

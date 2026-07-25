@@ -76,6 +76,7 @@ public final class OpenAiCompatibleChatModel implements ChatModel {
         for (ChatMessage message : request.messages()) {
             ObjectNode wire = messages.addObject().put("role", message.role().name().toLowerCase(Locale.ROOT)).put("content", message.content());
             if (message.role() == ChatMessageRole.TOOL) wire.put("tool_call_id", message.toolCallId());
+            if (!message.toolCalls().isEmpty()) { ArrayNode calls = wire.putArray("tool_calls"); for (ToolCall call : message.toolCalls()) calls.addObject().put("id", call.id()).put("type", "function").putObject("function").put("name", call.name()).put("arguments", JSON.valueToTree(call.arguments()).toString()); }
             if (preserveReasoningContent && message.role() == ChatMessageRole.ASSISTANT) {
                 message.contentBlocks().stream()
                         .filter(ReasoningContent.class::isInstance)

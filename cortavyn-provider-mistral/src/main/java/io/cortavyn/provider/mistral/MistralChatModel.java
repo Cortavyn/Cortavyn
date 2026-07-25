@@ -109,6 +109,7 @@ public final class MistralChatModel implements ChatModel {
             wireMessage.put("role", message.role().name().toLowerCase(Locale.ROOT));
             wireMessage.put("content", message.content());
             if (message.role() == ChatMessageRole.TOOL) wireMessage.put("tool_call_id", message.toolCallId());
+            if (!message.toolCalls().isEmpty()) { ArrayNode calls = wireMessage.putArray("tool_calls"); for (ToolCall call : message.toolCalls()) calls.addObject().put("id", call.id()).put("type", "function").putObject("function").put("name", call.name()).put("arguments", JSON.valueToTree(call.arguments()).toString()); }
         }
         try {
             return JSON.writeValueAsString(root);

@@ -21,14 +21,14 @@ This document tracks the remaining work needed to make Cortavyn's chat-model lay
 
 - [x] Gemini
 - [x] OpenAI Responses API
-- [ ] OpenAI Chat Completions
-- [ ] Anthropic Messages
-- [ ] AWS Bedrock Converse
-- [ ] Azure OpenAI Chat Completions
-- [ ] Mistral Chat Completions
-- [ ] Ollama Chat API
-- [ ] OpenRouter
-- [ ] OpenAI-compatible core (Groq, DeepSeek, xAI, Moonshot/Kimi, Qwen, Cloudflare Workers AI, vLLM, Vercel AI Gateway)
+- [x] OpenAI Chat Completions
+- [x] Anthropic Messages
+- [x] AWS Bedrock Converse
+- [x] Azure OpenAI Chat Completions
+- [x] Mistral Chat Completions
+- [x] Ollama Chat API
+- [x] OpenRouter
+- [x] OpenAI-compatible core (Groq, DeepSeek, xAI, Moonshot/Kimi, Qwen, Cloudflare Workers AI, vLLM, Vercel AI Gateway)
 
 **Acceptance criteria**
 

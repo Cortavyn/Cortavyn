@@ -133,7 +133,7 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
         return value;
     }
     private static List<ContentBlock> toBedrockAssistantContent(ChatMessage message, ContentBlock defaultContent) {
-        if (message.contentBlocks().stream().noneMatch(io.cortavyn.model.api.ReasoningContent.class::isInstance)) return List.of(defaultContent);
+        if (message.contentBlocks().stream().noneMatch(io.cortavyn.model.api.ReasoningContent.class::isInstance) && message.toolCalls().isEmpty()) return List.of(defaultContent);
         List<ContentBlock> blocks = new ArrayList<>();
         for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
             if (block instanceof io.cortavyn.model.api.ReasoningContent reasoning) {
@@ -141,6 +141,7 @@ public final class BedrockChatModel implements ChatModel, AutoCloseable {
                 blocks.add(ContentBlock.builder().reasoningContent(reasoningBlock -> reasoningBlock.reasoningText(reasoningText -> { reasoningText.text(reasoning.text()); if (signature instanceof String value && !value.isBlank()) reasoningText.signature(value); })).build());
             } else if (block instanceof io.cortavyn.model.api.TextContent text) blocks.add(ContentBlock.builder().text(text.text()).build());
         }
+        for (ToolCall call : message.toolCalls()) blocks.add(ContentBlock.builder().toolUse(toolUse -> toolUse.toolUseId(call.id()).name(call.name()).input(Document.fromMap(toDocumentMap(call.arguments())))).build());
         return blocks.isEmpty() ? List.of(defaultContent) : blocks;
     }
     private static java.util.Map<String, Document> toDocumentMap(java.util.Map<String, Object> values) { return values.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey, entry -> Document.fromString(String.valueOf(entry.getValue())))); }

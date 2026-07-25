@@ -104,7 +104,7 @@ public final class AnthropicChatModel implements ChatModel {
             if (message.role() == ChatMessageRole.TOOL) {
                 ArrayNode blocks = wireMessage.putArray("content");
                 blocks.addObject().put("type", "tool_result").put("tool_use_id", message.toolCallId()).put("content", message.content());
-            } else if (message.role() == ChatMessageRole.ASSISTANT && message.contentBlocks().stream().anyMatch(io.cortavyn.model.api.ReasoningContent.class::isInstance)) {
+            } else if (message.role() == ChatMessageRole.ASSISTANT && (!message.toolCalls().isEmpty() || message.contentBlocks().stream().anyMatch(io.cortavyn.model.api.ReasoningContent.class::isInstance))) {
                 ArrayNode blocks = wireMessage.putArray("content");
                 for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
                     if (block instanceof io.cortavyn.model.api.ReasoningContent reasoning) {
@@ -112,6 +112,7 @@ public final class AnthropicChatModel implements ChatModel {
                         Object signature = reasoning.providerState().get("signature"); if (signature instanceof String value && !value.isBlank()) thinking.put("signature", value);
                     } else if (block instanceof io.cortavyn.model.api.TextContent text) blocks.addObject().put("type", "text").put("text", text.text());
                 }
+                for (ToolCall call : message.toolCalls()) blocks.addObject().put("type", "tool_use").put("id", call.id()).put("name", call.name()).putPOJO("input", call.arguments());
             } else wireMessage.put("content", message.content());
         }
         if (!system.isEmpty()) root.put("system", system.toString());

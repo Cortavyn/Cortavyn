@@ -152,12 +152,27 @@ public final class OpenAiChatModel implements ChatModel {
             wireMessage.put("role", message.role().name().toLowerCase(Locale.ROOT));
             wireMessage.put("content", message.content());
             if (message.role() == ChatMessageRole.TOOL) wireMessage.put("tool_call_id", message.toolCallId());
+            addToolCalls(wireMessage, message.toolCalls());
         }
         try {
             return JSON.writeValueAsString(root);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize OpenAI request", exception);
         }
+    }
+
+    private static void addToolCalls(ObjectNode message, List<ToolCall> toolCalls) {
+        if (toolCalls.isEmpty()) return;
+        ArrayNode calls = message.putArray("tool_calls");
+        for (ToolCall call : toolCalls) {
+            calls.addObject().put("id", call.id()).put("type", "function")
+                    .putObject("function").put("name", call.name()).put("arguments", toJson(call.arguments()));
+        }
+    }
+
+    private static String toJson(Map<String, Object> value) {
+        try { return JSON.writeValueAsString(value); }
+        catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize tool-call arguments", exception); }
     }
 
     private static URI normalizeBaseUrl(@Nullable URI baseUrl) {
