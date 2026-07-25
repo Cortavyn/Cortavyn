@@ -11,6 +11,12 @@ import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
 import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.TextContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.AudioContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.MediaUris;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
@@ -47,6 +53,8 @@ public final class OpenAiCompatibleChatModel implements StructuredOutputChatMode
     private final Map<String, String> headers;
     private final Map<String, Object> additionalParameters;
     private final boolean preserveReasoningContent;
+    private final boolean supportsImages;
+    private final boolean supportsAudio;
 
     private OpenAiCompatibleChatModel(Builder b) {
         httpClient = b.httpClient == null ? HttpClient.newHttpClient() : b.httpClient;
@@ -60,6 +68,8 @@ public final class OpenAiCompatibleChatModel implements StructuredOutputChatMode
         headers = Map.copyOf(b.headers);
         additionalParameters = Map.copyOf(b.additionalParameters);
         preserveReasoningContent = b.preserveReasoningContent;
+        supportsImages = b.supportsImages;
+        supportsAudio = b.supportsAudio;
         if (timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("timeout must be positive");
         if (temperature != null && (temperature < 0 || temperature > 2)) throw new IllegalArgumentException("temperature must be in [0.0, 2.0]");
         if (maxTokens != null && maxTokens <= 0) throw new IllegalArgumentException("maxTokens must be positive");
@@ -98,7 +108,8 @@ public final class OpenAiCompatibleChatModel implements StructuredOutputChatMode
         additionalParameters.forEach(root::putPOJO);
         ArrayNode messages = root.putArray("messages");
         for (ChatMessage message : request.messages()) {
-            ObjectNode wire = messages.addObject().put("role", message.role().name().toLowerCase(Locale.ROOT)).put("content", message.content());
+            ObjectNode wire = messages.addObject().put("role", message.role().name().toLowerCase(Locale.ROOT));
+            addContent(wire, message);
             if (message.role() == ChatMessageRole.TOOL) wire.put("tool_call_id", message.toolCallId());
             if (!message.toolCalls().isEmpty()) { ArrayNode calls = wire.putArray("tool_calls"); for (ToolCall call : message.toolCalls()) calls.addObject().put("id", call.id()).put("type", "function").putObject("function").put("name", call.name()).put("arguments", JSON.valueToTree(call.arguments()).toString()); }
             if (preserveReasoningContent && message.role() == ChatMessageRole.ASSISTANT) {
@@ -113,6 +124,26 @@ public final class OpenAiCompatibleChatModel implements StructuredOutputChatMode
         }
         try { return JSON.writeValueAsString(root); }
         catch (JsonProcessingException e) { throw new IllegalStateException("Unable to serialize chat request", e); }
+    }
+    private void addContent(ObjectNode message, ChatMessage source) {
+        if (source.contentBlocks().size() == 1 && source.contentBlocks().getFirst() instanceof TextContent text) { message.put("content", text.text()); return; }
+        ArrayNode content = message.putArray("content");
+        for (io.cortavyn.model.api.ChatContent block : source.contentBlocks()) {
+            if (block instanceof TextContent text) content.addObject().put("type", "text").put("text", text.text());
+            else if (block instanceof ImageContent image) {
+                if (!supportsImages) throw new UnsupportedChatContentException("OpenAI-compatible endpoint", image);
+                content.addObject().put("type", "image_url").putObject("image_url").put("url", image.uri().toString());
+            } else if (block instanceof AudioContent audio) {
+                if (!supportsAudio) throw new UnsupportedChatContentException("OpenAI-compatible endpoint", audio);
+                content.addObject().put("type", "input_audio").putObject("input_audio").put("data", MediaUris.base64Data(audio.uri(), "OpenAI-compatible endpoint", audio)).put("format", mediaSubtype(audio.mediaType(), audio));
+            } else if (block instanceof DocumentContent document) throw new UnsupportedChatContentException("OpenAI-compatible endpoint", document);
+            else if (!(block instanceof ReasoningContent)) throw new UnsupportedChatContentException("OpenAI-compatible endpoint", block);
+        }
+    }
+    private static String mediaSubtype(String mediaType, io.cortavyn.model.api.ChatContent content) {
+        int slash = mediaType.indexOf('/');
+        if (slash < 1 || slash == mediaType.length() - 1) throw new UnsupportedChatContentException("OpenAI-compatible endpoint", content.getClass().getSimpleName() + " media type");
+        return mediaType.substring(slash + 1);
     }
     private ChatResponse toResponse(HttpResponse<String> response) {
         if (response.statusCode() < 200 || response.statusCode() >= 300) throw new OpenAiCompatibleHttpException(response.statusCode(), response.body());
@@ -131,7 +162,7 @@ public final class OpenAiCompatibleChatModel implements StructuredOutputChatMode
     public static final class Builder {
         private @Nullable HttpClient httpClient; private @Nullable String baseUrl; private @Nullable String apiKey; private @Nullable String modelName;
         private @Nullable Duration timeout; private @Nullable Double temperature; private @Nullable Integer maxTokens; private Map<String, String> headers = Map.of();
-        private Map<String, Object> additionalParameters = Map.of(); private boolean preserveReasoningContent;
+        private Map<String, Object> additionalParameters = Map.of(); private boolean preserveReasoningContent; private boolean supportsImages; private boolean supportsAudio;
         private Builder() { }
         public Builder httpClient(HttpClient value) { httpClient = Objects.requireNonNull(value); return this; }
         public Builder baseUrl(String value) { baseUrl = value; return this; }
@@ -144,6 +175,10 @@ public final class OpenAiCompatibleChatModel implements StructuredOutputChatMode
         public Builder additionalParameters(Map<String, Object> value) { additionalParameters = Map.copyOf(value); return this; }
         /** Replays assistant reasoning on subsequent requests for compatible APIs that require it. */
         public Builder preserveReasoningContent(boolean value) { preserveReasoningContent = value; return this; }
+        /** Enables OpenAI-compatible {@code image_url} content for a vision-capable selected model. */
+        public Builder supportsImages(boolean value) { supportsImages = value; return this; }
+        /** Enables OpenAI-compatible {@code input_audio} content for an audio-capable selected model. */
+        public Builder supportsAudio(boolean value) { supportsAudio = value; return this; }
         public OpenAiCompatibleChatModel build() { return new OpenAiCompatibleChatModel(this); }
     }
 }

@@ -7,7 +7,11 @@ import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.AudioContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.ImageContent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -73,5 +77,16 @@ class GeminiChatModelTest {
         var config = new ObjectMapper().readTree(payload).path("generationConfig").path("thinkingConfig");
         assertEquals(true, config.path("includeThoughts").asBoolean());
         assertEquals(1024, config.path("thinkingBudget").asInt());
+    }
+
+    @Test void mapsImageAudioAndDocumentAsInlineData() {
+        var model = GeminiChatModel.builder().apiKey("test-key").build();
+        String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(
+                new ImageContent(URI.create("data:image/png;base64,aW1hZ2U="), "image/png"),
+                new AudioContent(URI.create("data:audio/wav;base64,YXVkaW8="), "audio/wav"),
+                new DocumentContent(URI.create("data:application/pdf;base64,cGRm"), "application/pdf", "report.pdf"))))));
+        assertEquals(true, payload.contains("\"mimeType\":\"image/png\",\"data\":\"aW1hZ2U=\""));
+        assertEquals(true, payload.contains("\"mimeType\":\"audio/wav\",\"data\":\"YXVkaW8=\""));
+        assertEquals(true, payload.contains("\"mimeType\":\"application/pdf\",\"data\":\"cGRm\""));
     }
 }

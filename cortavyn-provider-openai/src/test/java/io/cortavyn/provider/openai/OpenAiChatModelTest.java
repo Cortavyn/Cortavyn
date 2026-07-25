@@ -6,7 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.model.api.AudioContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.ImageContent;
 import io.cortavyn.model.api.StructuredOutputSchema;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -69,5 +73,23 @@ class OpenAiChatModelTest {
         String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, "Hello"))),
                 new StructuredOutputSchema("answer", Map.of("type", "object"), true));
         assertEquals("{\"model\":\"gpt-test\",\"response_format\":{\"type\":\"json_schema\",\"json_schema\":{\"name\":\"answer\",\"strict\":true,\"schema\":{\"type\":\"object\"}}},\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}", payload);
+    }
+
+    @Test
+    void mapsImagesAndAudioToChatCompletionsContent() {
+        var model = OpenAiChatModel.builder().apiKey("test-key").modelName("gpt-test").build();
+        String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(
+                new ImageContent(URI.create("https://example.test/image.png"), "image/png"),
+                new AudioContent(URI.create("data:audio/wav;base64,YXVkaW8="), "audio/wav"))))));
+        assertEquals(true, payload.contains("\"type\":\"image_url\""));
+        assertEquals(true, payload.contains("\"type\":\"input_audio\",\"input_audio\":{\"data\":\"YXVkaW8=\",\"format\":\"wav\"}"));
+    }
+
+    @Test
+    void rejectsDocumentsWithAClearCapabilityError() {
+        var model = OpenAiChatModel.builder().apiKey("test-key").modelName("gpt-test").build();
+        var error = assertThrows(IllegalArgumentException.class, () -> model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(
+                new DocumentContent(URI.create("data:application/pdf;base64,cGRm"), "application/pdf", "report.pdf")))))));
+        assertEquals("OpenAI Chat Completions does not support DocumentContent", error.getMessage());
     }
 }

@@ -12,6 +12,9 @@ import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
 import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.MediaUris;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
@@ -74,6 +77,10 @@ public final class OllamaChatModel implements ChatModel, StreamingChatModel {
             ObjectNode wireMessage = messages.addObject();
             wireMessage.put("role", switch (message.role()) { case SYSTEM -> "system"; case USER -> "user"; case ASSISTANT -> "assistant"; case TOOL -> "tool"; });
             wireMessage.put("content", message.content());
+            for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
+                if (block instanceof ImageContent image) wireMessage.withArray("images").add(MediaUris.base64Data(image.uri(), "Ollama", image));
+                else if (!(block instanceof io.cortavyn.model.api.TextContent) && !(block instanceof ReasoningContent)) throw new UnsupportedChatContentException("Ollama", block);
+            }
             if (!message.toolCalls().isEmpty()) { ArrayNode calls = wireMessage.putArray("tool_calls"); for (ToolCall call : message.toolCalls()) calls.addObject().putObject("function").put("name", call.name()).putPOJO("arguments", call.arguments()); }
         }
         try { return JSON.writeValueAsString(root); }

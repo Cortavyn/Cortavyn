@@ -10,6 +10,10 @@ import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.MediaUris;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import io.cortavyn.model.api.StreamingChatModel;
 import io.cortavyn.model.api.ChatStreamEvent;
 import io.cortavyn.model.api.ChatTextDelta;
@@ -23,6 +27,7 @@ import java.util.concurrent.SubmissionPublisher;
 import org.jspecify.annotations.Nullable;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.document.Document;
+import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeAsyncClient;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeAsyncClientBuilder;
@@ -93,11 +98,10 @@ public final class BedrockChatModel implements ChatModel, StreamingChatModel, Au
         List<Message> messages = new ArrayList<>();
         List<SystemContentBlock> system = new ArrayList<>();
         for (ChatMessage message : request.messages()) {
-            ContentBlock content = ContentBlock.builder().text(message.content()).build();
             switch (message.role()) {
                 case SYSTEM -> system.add(SystemContentBlock.builder().text(message.content()).build());
-                case USER -> messages.add(Message.builder().role(ConversationRole.USER).content(content).build());
-                case ASSISTANT -> messages.add(Message.builder().role(ConversationRole.ASSISTANT).content(toBedrockAssistantContent(message, content)).build());
+                case USER -> messages.add(Message.builder().role(ConversationRole.USER).content(toBedrockUserContent(message)).build());
+                case ASSISTANT -> messages.add(Message.builder().role(ConversationRole.ASSISTANT).content(toBedrockAssistantContent(message, ContentBlock.builder().text(message.content()).build())).build());
                 case TOOL -> messages.add(Message.builder().role(ConversationRole.USER).content(ContentBlock.builder().toolResult(result -> result.toolUseId(message.toolCallId()).content(block -> block.text(message.content()))).build()).build());
             }
         }
@@ -155,6 +159,9 @@ public final class BedrockChatModel implements ChatModel, StreamingChatModel, Au
         return value;
     }
     private static List<ContentBlock> toBedrockAssistantContent(ChatMessage message, ContentBlock defaultContent) {
+        for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
+            if (block instanceof ImageContent || block instanceof DocumentContent) throw new UnsupportedChatContentException("AWS Bedrock assistant messages", block);
+        }
         if (message.contentBlocks().stream().noneMatch(io.cortavyn.model.api.ReasoningContent.class::isInstance) && message.toolCalls().isEmpty()) return List.of(defaultContent);
         List<ContentBlock> blocks = new ArrayList<>();
         for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
@@ -162,9 +169,25 @@ public final class BedrockChatModel implements ChatModel, StreamingChatModel, Au
                 Object signature = reasoning.providerState().get("signature");
                 blocks.add(ContentBlock.builder().reasoningContent(reasoningBlock -> reasoningBlock.reasoningText(reasoningText -> { reasoningText.text(reasoning.text()); if (signature instanceof String value && !value.isBlank()) reasoningText.signature(value); })).build());
             } else if (block instanceof io.cortavyn.model.api.TextContent text) blocks.add(ContentBlock.builder().text(text.text()).build());
+            else if (!(block instanceof ImageContent) && !(block instanceof DocumentContent)) throw new UnsupportedChatContentException("AWS Bedrock", block);
         }
         for (ToolCall call : message.toolCalls()) blocks.add(ContentBlock.builder().toolUse(toolUse -> toolUse.toolUseId(call.id()).name(call.name()).input(Document.fromMap(toDocumentMap(call.arguments())))).build());
         return blocks.isEmpty() ? List.of(defaultContent) : blocks;
+    }
+    private static List<ContentBlock> toBedrockUserContent(ChatMessage message) {
+        List<ContentBlock> blocks = new ArrayList<>();
+        for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
+            if (block instanceof io.cortavyn.model.api.TextContent text) blocks.add(ContentBlock.builder().text(text.text()).build());
+            else if (block instanceof ImageContent image) blocks.add(ContentBlock.builder().image(value -> value.format(mediaSubtype(image.mediaType(), "AWS Bedrock", image)).source(source -> source.bytes(SdkBytes.fromByteArray(MediaUris.decodedBase64Data(image.uri(), "AWS Bedrock", image))))).build());
+            else if (block instanceof DocumentContent document) blocks.add(ContentBlock.builder().document(value -> value.name(document.name()).format(mediaSubtype(document.mediaType(), "AWS Bedrock", document)).source(source -> source.bytes(SdkBytes.fromByteArray(MediaUris.decodedBase64Data(document.uri(), "AWS Bedrock", document))))).build());
+            else if (!(block instanceof ReasoningContent)) throw new UnsupportedChatContentException("AWS Bedrock", block);
+        }
+        return blocks.isEmpty() ? List.of(ContentBlock.builder().text(message.content()).build()) : blocks;
+    }
+    private static String mediaSubtype(String mediaType, String provider, io.cortavyn.model.api.ChatContent content) {
+        int slash = mediaType.indexOf('/');
+        if (slash < 1 || slash == mediaType.length() - 1) throw new UnsupportedChatContentException(provider, content.getClass().getSimpleName() + " media type");
+        return mediaType.substring(slash + 1);
     }
     private static java.util.Map<String, Document> toDocumentMap(java.util.Map<String, Object> values) { return values.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey, entry -> Document.fromString(String.valueOf(entry.getValue())))); }
     private static java.util.Map<String, Object> toObjectMap(java.util.Map<String, Document> values) { return values.entrySet().stream().collect(java.util.stream.Collectors.toMap(java.util.Map.Entry::getKey, entry -> entry.getValue().toString())); }

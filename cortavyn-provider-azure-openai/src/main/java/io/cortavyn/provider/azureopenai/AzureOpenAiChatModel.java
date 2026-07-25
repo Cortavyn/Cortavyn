@@ -20,6 +20,12 @@ import io.cortavyn.model.api.StreamingChatModel;
 import io.cortavyn.model.api.ChatStreamEvent;
 import io.cortavyn.model.api.ChatStreamPublishers;
 import io.cortavyn.model.api.OpenAiChatStreamAccumulator;
+import io.cortavyn.model.api.TextContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.AudioContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.MediaUris;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -60,6 +66,8 @@ public final class AzureOpenAiChatModel implements StructuredOutputChatModel, St
     private final List<String> stopSequences;
     private final @Nullable String reasoningEffort;
     private final Map<String, Object> additionalParameters;
+    private final boolean supportsImages;
+    private final boolean supportsAudio;
 
     private AzureOpenAiChatModel(Builder builder) {
         httpClient = builder.httpClient == null ? HttpClient.newHttpClient() : builder.httpClient;
@@ -79,6 +87,8 @@ public final class AzureOpenAiChatModel implements StructuredOutputChatModel, St
         stopSequences = builder.stopSequences == null ? List.of() : List.copyOf(builder.stopSequences);
         reasoningEffort = builder.reasoningEffort;
         additionalParameters = Map.copyOf(builder.additionalParameters);
+        supportsImages = builder.supportsImages;
+        supportsAudio = builder.supportsAudio;
         validate();
     }
 
@@ -132,12 +142,33 @@ public final class AzureOpenAiChatModel implements StructuredOutputChatModel, St
         for (ChatMessage message : request.messages()) {
             ObjectNode wireMessage = messages.addObject();
             wireMessage.put("role", message.role().name().toLowerCase(Locale.ROOT));
-            wireMessage.put("content", message.content());
+            addContent(wireMessage, message);
             if (message.role() == ChatMessageRole.TOOL) wireMessage.put("tool_call_id", message.toolCallId());
             if (!message.toolCalls().isEmpty()) { ArrayNode calls = wireMessage.putArray("tool_calls"); for (ToolCall call : message.toolCalls()) calls.addObject().put("id", call.id()).put("type", "function").putObject("function").put("name", call.name()).put("arguments", JSON.valueToTree(call.arguments()).toString()); }
         }
         try { return JSON.writeValueAsString(root); }
         catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Azure OpenAI request", exception); }
+    }
+
+    private void addContent(ObjectNode message, ChatMessage source) {
+        if (source.contentBlocks().size() == 1 && source.contentBlocks().getFirst() instanceof TextContent text) { message.put("content", text.text()); return; }
+        ArrayNode content = message.putArray("content");
+        for (io.cortavyn.model.api.ChatContent block : source.contentBlocks()) {
+            if (block instanceof TextContent text) content.addObject().put("type", "text").put("text", text.text());
+            else if (block instanceof ImageContent image) {
+                if (!supportsImages) throw new UnsupportedChatContentException("Azure OpenAI deployment", image);
+                content.addObject().put("type", "image_url").putObject("image_url").put("url", image.uri().toString());
+            } else if (block instanceof AudioContent audio) {
+                if (!supportsAudio) throw new UnsupportedChatContentException("Azure OpenAI deployment", audio);
+                content.addObject().put("type", "input_audio").putObject("input_audio").put("data", MediaUris.base64Data(audio.uri(), "Azure OpenAI deployment", audio)).put("format", mediaSubtype(audio.mediaType(), audio));
+            } else if (block instanceof DocumentContent document) throw new UnsupportedChatContentException("Azure OpenAI Chat Completions", document);
+            else if (!(block instanceof io.cortavyn.model.api.ReasoningContent)) throw new UnsupportedChatContentException("Azure OpenAI deployment", block);
+        }
+    }
+    private static String mediaSubtype(String mediaType, io.cortavyn.model.api.ChatContent content) {
+        int slash = mediaType.indexOf('/');
+        if (slash < 1 || slash == mediaType.length() - 1) throw new UnsupportedChatContentException("Azure OpenAI deployment", content.getClass().getSimpleName() + " media type");
+        return mediaType.substring(slash + 1);
     }
 
     private ChatResponse toChatResponse(HttpResponse<String> response) {
@@ -196,6 +227,8 @@ public final class AzureOpenAiChatModel implements StructuredOutputChatModel, St
         private @Nullable List<String> stopSequences;
         private @Nullable String reasoningEffort;
         private Map<String, Object> additionalParameters = Map.of();
+        private boolean supportsImages;
+        private boolean supportsAudio;
         private Builder() { }
         /** @param value HTTP client used for requests */
         public Builder httpClient(HttpClient value) { httpClient = Objects.requireNonNull(value); return this; }
@@ -219,6 +252,10 @@ public final class AzureOpenAiChatModel implements StructuredOutputChatModel, St
         /** Sets the reasoning effort for Azure OpenAI reasoning deployments. */
         public Builder reasoningEffort(String value) { reasoningEffort = requireNonBlank(value, "reasoningEffort"); return this; }
         public Builder additionalParameters(Map<String, Object> value) { additionalParameters = Map.copyOf(value); return this; }
+        /** Enables image input for a vision-capable Azure deployment. */
+        public Builder supportsImages(boolean value) { supportsImages = value; return this; }
+        /** Enables audio input for an audio-capable Azure deployment. */
+        public Builder supportsAudio(boolean value) { supportsAudio = value; return this; }
         /** @return an immutable Azure OpenAI Chat Completions adapter */
         public AzureOpenAiChatModel build() { return new AzureOpenAiChatModel(this); }
     }

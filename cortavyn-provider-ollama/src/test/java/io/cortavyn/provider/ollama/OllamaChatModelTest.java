@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.model.api.ImageContent;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -22,5 +24,12 @@ class OllamaChatModelTest {
     @Test void mapsToolMessages() {
         var model = OllamaChatModel.builder().build();
         assertEquals(true, model.toRequestJson(new ChatRequest(List.of(ChatMessage.toolResult("call_1", "result")))).contains("\"role\":\"tool\""));
+    }
+
+    @Test void mapsBase64Images() {
+        var model = OllamaChatModel.builder().build();
+        String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(
+                new ImageContent(URI.create("data:image/png;base64,aW1hZ2U="), "image/png"))))));
+        assertEquals(true, payload.contains("\"images\":[\"aW1hZ2U=\"]"));
     }
 }

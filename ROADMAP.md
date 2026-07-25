@@ -79,10 +79,10 @@ Bedrock ConverseStream are normalized into portable stream events and a final co
 
 The portable content types exist but are not yet mapped consistently to provider wire formats.
 
-- [ ] Images: OpenAI, Anthropic, Gemini, Bedrock, OpenRouter, Ollama where supported
-- [ ] Audio: OpenAI and Gemini where supported
-- [ ] Documents/PDFs: OpenAI, Anthropic, Gemini, Bedrock where supported
-- [ ] Capability checks and clear errors for unsupported content types
+- [x] Images: OpenAI, Anthropic, Gemini, Bedrock, Mistral, OpenRouter, Ollama where supported
+- [x] Audio: OpenAI and Gemini where supported
+- [x] Documents/PDFs: OpenAI, Anthropic, Gemini, Bedrock where supported
+- [x] Capability checks and clear errors for unsupported content types, including Azure OpenAI and OpenAI-compatible provider wrappers
 
 ## P2 — Provider-native agent capabilities
 

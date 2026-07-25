@@ -1,12 +1,15 @@
 package io.cortavyn.provider.openaicompatible;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.ImageContent;
+import java.net.URI;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -40,5 +43,16 @@ class OpenAiCompatibleChatModelTest {
         var json = JSON.readTree(model.toRequestJson(new ChatRequest(List.of(assistant))));
 
         assertEquals("Need a tool.", json.path("messages").path(0).path("reasoning_content").asText());
+    }
+
+    @Test
+    void mapsImagesOnlyWhenTheSelectedModelDeclaresVisionSupport() throws Exception {
+        var image = new ImageContent(URI.create("https://example.test/image.png"), "image/png");
+        var unsupported = OpenAiCompatibleChatModel.builder().baseUrl("https://example.test/v1").apiKey("token").modelName("model").build();
+        assertThrows(IllegalArgumentException.class, () -> unsupported.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(image))))));
+
+        var supported = OpenAiCompatibleChatModel.builder().baseUrl("https://example.test/v1").apiKey("token").modelName("vision-model").supportsImages(true).build();
+        var json = JSON.readTree(supported.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(image))))));
+        assertEquals("image_url", json.path("messages").path(0).path("content").path(0).path("type").asText());
     }
 }

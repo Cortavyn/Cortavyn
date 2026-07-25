@@ -20,6 +20,12 @@ import io.cortavyn.model.api.StreamingChatModel;
 import io.cortavyn.model.api.ChatStreamEvent;
 import io.cortavyn.model.api.ChatStreamPublishers;
 import io.cortavyn.model.api.OpenAiChatStreamAccumulator;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.AudioContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.TextContent;
+import io.cortavyn.model.api.MediaUris;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -184,7 +190,7 @@ public final class OpenAiChatModel implements StructuredOutputChatModel, Streami
         for (ChatMessage message : request.messages()) {
             ObjectNode wireMessage = messages.addObject();
             wireMessage.put("role", message.role().name().toLowerCase(Locale.ROOT));
-            wireMessage.put("content", message.content());
+            addContent(wireMessage, message);
             if (message.role() == ChatMessageRole.TOOL) wireMessage.put("tool_call_id", message.toolCallId());
             addToolCalls(wireMessage, message.toolCalls());
         }
@@ -192,6 +198,18 @@ public final class OpenAiChatModel implements StructuredOutputChatModel, Streami
             return JSON.writeValueAsString(root);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize OpenAI request", exception);
+        }
+    }
+
+    private static void addContent(ObjectNode message, ChatMessage source) {
+        if (source.contentBlocks().size() == 1 && source.contentBlocks().getFirst() instanceof TextContent text) { message.put("content", text.text()); return; }
+        ArrayNode content = message.putArray("content");
+        for (io.cortavyn.model.api.ChatContent block : source.contentBlocks()) {
+            if (block instanceof TextContent text) content.addObject().put("type", "text").put("text", text.text());
+            else if (block instanceof ImageContent image) content.addObject().put("type", "image_url").putObject("image_url").put("url", image.uri().toString());
+            else if (block instanceof AudioContent audio) content.addObject().put("type", "input_audio").putObject("input_audio").put("data", MediaUris.base64Data(audio.uri(), "OpenAI Chat Completions", audio)).put("format", audio.mediaType().substring(audio.mediaType().indexOf('/') + 1));
+            else if (block instanceof DocumentContent document) throw new UnsupportedChatContentException("OpenAI Chat Completions", document);
+            else if (!(block instanceof io.cortavyn.model.api.ReasoningContent)) throw new UnsupportedChatContentException("OpenAI Chat Completions", block);
         }
     }
 

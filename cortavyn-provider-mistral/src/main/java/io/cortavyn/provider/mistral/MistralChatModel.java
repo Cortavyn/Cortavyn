@@ -15,6 +15,9 @@ import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.TextContent;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import io.cortavyn.model.api.StructuredOutputChatModel;
 import io.cortavyn.model.api.StructuredOutputSchema;
 import io.cortavyn.model.api.StreamingChatModel;
@@ -132,7 +135,7 @@ public final class MistralChatModel implements StructuredOutputChatModel, Stream
         for (ChatMessage message : request.messages()) {
             ObjectNode wireMessage = messages.addObject();
             wireMessage.put("role", message.role().name().toLowerCase(Locale.ROOT));
-            wireMessage.put("content", message.content());
+            addContent(wireMessage, message);
             if (message.role() == ChatMessageRole.TOOL) wireMessage.put("tool_call_id", message.toolCallId());
             if (!message.toolCalls().isEmpty()) { ArrayNode calls = wireMessage.putArray("tool_calls"); for (ToolCall call : message.toolCalls()) calls.addObject().put("id", call.id()).put("type", "function").putObject("function").put("name", call.name()).put("arguments", JSON.valueToTree(call.arguments()).toString()); }
         }
@@ -140,6 +143,16 @@ public final class MistralChatModel implements StructuredOutputChatModel, Stream
             return JSON.writeValueAsString(root);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize Mistral request", exception);
+        }
+    }
+
+    private static void addContent(ObjectNode message, ChatMessage source) {
+        if (source.contentBlocks().size() == 1 && source.contentBlocks().getFirst() instanceof TextContent text) { message.put("content", text.text()); return; }
+        ArrayNode content = message.putArray("content");
+        for (io.cortavyn.model.api.ChatContent block : source.contentBlocks()) {
+            if (block instanceof TextContent text) content.addObject().put("type", "text").put("text", text.text());
+            else if (block instanceof ImageContent image) content.addObject().put("type", "image_url").put("image_url", image.uri().toString());
+            else if (!(block instanceof ReasoningContent)) throw new UnsupportedChatContentException("Mistral", block);
         }
     }
 

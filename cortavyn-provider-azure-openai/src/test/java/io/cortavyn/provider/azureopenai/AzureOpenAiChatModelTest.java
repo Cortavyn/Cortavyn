@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.model.api.ImageContent;
 import java.net.URI;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -43,5 +44,14 @@ class AzureOpenAiChatModelTest {
                 .apiKey("secret")
                 .apiVersion("2025-04-01-preview")
                 .build());
+    }
+
+    @Test
+    void mapsImagesOnlyForVisionEnabledDeployments() throws Exception {
+        var model = AzureOpenAiChatModel.builder().endpoint(URI.create("https://example.openai.azure.com")).apiKey("secret")
+                .deploymentName("gpt-4.1").apiVersion("2025-04-01-preview").supportsImages(true).build();
+        var image = new ImageContent(URI.create("https://example.test/image.png"), "image/png");
+        var json = JSON.readTree(model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(image))))));
+        assertEquals("image_url", json.path("messages").path(0).path("content").path(0).path("type").asText());
     }
 }

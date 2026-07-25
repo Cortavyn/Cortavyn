@@ -15,6 +15,10 @@ import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.MediaUris;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import io.cortavyn.model.api.StructuredOutputChatModel;
 import io.cortavyn.model.api.StructuredOutputSchema;
 import io.cortavyn.model.api.StreamingChatModel;
@@ -139,14 +143,30 @@ public final class AnthropicChatModel implements StructuredOutputChatModel, Stre
                         ObjectNode thinking = blocks.addObject().put("type", "thinking").put("thinking", reasoning.text());
                         Object signature = reasoning.providerState().get("signature"); if (signature instanceof String value && !value.isBlank()) thinking.put("signature", value);
                     } else if (block instanceof io.cortavyn.model.api.TextContent text) blocks.addObject().put("type", "text").put("text", text.text());
+                    else throw new UnsupportedChatContentException("Anthropic assistant messages", block);
                 }
                 for (ToolCall call : message.toolCalls()) blocks.addObject().put("type", "tool_use").put("id", call.id()).put("name", call.name()).putPOJO("input", call.arguments());
-            } else wireMessage.put("content", message.content());
+            } else {
+                if (message.contentBlocks().size() == 1 && message.contentBlocks().getFirst() instanceof io.cortavyn.model.api.TextContent text) wireMessage.put("content", text.text());
+                else {
+                    ArrayNode blocks = wireMessage.putArray("content");
+                    addContent(blocks, message);
+                }
+            }
         }
         if (!system.isEmpty()) root.put("system", system.toString());
         if (messages.isEmpty()) throw new IllegalArgumentException("Anthropic requires at least one non-system message");
         try { return JSON.writeValueAsString(root); }
         catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Anthropic request", exception); }
+    }
+
+    private static void addContent(ArrayNode blocks, ChatMessage message) {
+        for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
+            if (block instanceof io.cortavyn.model.api.TextContent text) blocks.addObject().put("type", "text").put("text", text.text());
+            else if (block instanceof ImageContent image) blocks.addObject().put("type", "image").putObject("source").put("type", "base64").put("media_type", image.mediaType()).put("data", MediaUris.base64Data(image.uri(), "Anthropic", image));
+            else if (block instanceof DocumentContent document) blocks.addObject().put("type", "document").putObject("source").put("type", "base64").put("media_type", document.mediaType()).put("data", MediaUris.base64Data(document.uri(), "Anthropic", document));
+            else if (!(block instanceof ReasoningContent)) throw new UnsupportedChatContentException("Anthropic", block);
+        }
     }
 
     private ChatResponse toChatResponse(HttpResponse<String> response) {

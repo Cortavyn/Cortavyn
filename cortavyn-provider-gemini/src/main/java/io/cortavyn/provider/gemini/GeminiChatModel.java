@@ -15,6 +15,11 @@ import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.AudioContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.MediaUris;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import io.cortavyn.model.api.StructuredOutputChatModel;
 import io.cortavyn.model.api.StructuredOutputSchema;
 import io.cortavyn.model.api.StreamingChatModel;
@@ -124,6 +129,7 @@ public final class GeminiChatModel implements StructuredOutputChatModel, Streami
                 for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
                     if (block instanceof io.cortavyn.model.api.ReasoningContent reasoning) { ObjectNode thought = parts.addObject().put("text", reasoning.text()).put("thought", true); Object signature = reasoning.providerState().get("thoughtSignature"); if (signature instanceof String value && !value.isBlank()) thought.put("thoughtSignature", value); }
                     else if (block instanceof io.cortavyn.model.api.TextContent text) parts.addObject().put("text", text.text());
+                    else throw new UnsupportedChatContentException("Gemini assistant messages", block);
                 }
                 for (ToolCall toolCall : message.toolCalls()) {
                     ObjectNode part = parts.addObject();
@@ -132,7 +138,16 @@ public final class GeminiChatModel implements StructuredOutputChatModel, Streami
                     if (signature instanceof String value && !value.isBlank()) part.put("thoughtSignature", value);
                 }
                 if (parts.isEmpty()) parts.addObject().put("text", message.content());
-            } else content.putArray("parts").addObject().put("text", message.content());
+            } else {
+                ArrayNode parts = content.putArray("parts");
+                for (io.cortavyn.model.api.ChatContent block : message.contentBlocks()) {
+                    if (block instanceof io.cortavyn.model.api.TextContent text) parts.addObject().put("text", text.text());
+                    else if (block instanceof ImageContent image) addInlineData(parts, image.uri(), image.mediaType(), image);
+                    else if (block instanceof AudioContent audio) addInlineData(parts, audio.uri(), audio.mediaType(), audio);
+                    else if (block instanceof DocumentContent document) addInlineData(parts, document.uri(), document.mediaType(), document);
+                    else if (!(block instanceof ReasoningContent)) throw new UnsupportedChatContentException("Gemini", block);
+                }
+            }
         }
         if (contents.isEmpty()) throw new IllegalArgumentException("Gemini requires at least one non-system message");
         ObjectNode generationConfig = root.putObject("generationConfig");
@@ -153,6 +168,10 @@ public final class GeminiChatModel implements StructuredOutputChatModel, Streami
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize Gemini request", exception);
         }
+    }
+
+    private static void addInlineData(ArrayNode parts, URI uri, String mediaType, io.cortavyn.model.api.ChatContent content) {
+        parts.addObject().putObject("inlineData").put("mimeType", mediaType).put("data", MediaUris.base64Data(uri, "Gemini", content));
     }
 
     private ChatResponse toChatResponse(HttpResponse<String> response) {

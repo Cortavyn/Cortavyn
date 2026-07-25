@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.ImageContent;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -79,5 +82,16 @@ class OpenAiResponsesChatModelTest {
         assertEquals("function_call_output", payload.path("input").path(0).path("type").asText());
         assertEquals("call_123", payload.path("input").path(0).path("call_id").asText());
         assertEquals("sunny", payload.path("input").path(0).path("output").asText());
+    }
+
+    @Test
+    void mapsImagesAndDocumentsToResponsesInputContent() throws Exception {
+        var model = OpenAiResponsesChatModel.builder().apiKey("test-key").modelName("gpt-test").build();
+        var payload = JSON.readTree(model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(
+                new ImageContent(URI.create("https://example.test/image.png"), "image/png"),
+                new DocumentContent(URI.create("data:application/pdf;base64,cGRm"), "application/pdf", "report.pdf")))))));
+        assertEquals("input_image", payload.path("input").path(0).path("content").path(0).path("type").asText());
+        assertEquals("input_file", payload.path("input").path(0).path("content").path(1).path("type").asText());
+        assertEquals("report.pdf", payload.path("input").path(0).path("content").path(1).path("filename").asText());
     }
 }

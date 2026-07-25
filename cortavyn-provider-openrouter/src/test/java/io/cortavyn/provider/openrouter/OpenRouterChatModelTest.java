@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.cortavyn.model.api.ChatMessage;
 import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatRequest;
+import io.cortavyn.model.api.ImageContent;
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -46,5 +48,12 @@ class OpenRouterChatModelTest {
         var model = OpenRouterChatModel.builder().apiKey("test-key").build();
         var request = new ChatRequest(List.of(ChatMessage.toolResult("call_1", "result")));
         assertEquals("{\"model\":\"openrouter/free\",\"messages\":[{\"role\":\"tool\",\"content\":\"result\",\"tool_call_id\":\"call_1\"}]}", model.toRequestJson(request));
+    }
+
+    @Test void mapsImageContentUsingTheOpenAiShape() {
+        var model = OpenRouterChatModel.builder().apiKey("test-key").build();
+        String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, List.of(
+                new ImageContent(URI.create("https://example.test/image.png"), "image/png"))))));
+        assertEquals(true, payload.contains("\"type\":\"image_url\",\"image_url\":{\"url\":\"https://example.test/image.png\"}"));
     }
 }

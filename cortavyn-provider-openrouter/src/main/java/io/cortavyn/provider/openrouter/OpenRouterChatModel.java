@@ -12,6 +12,8 @@ import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatResponse;
 import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.ReasoningContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
@@ -127,7 +129,7 @@ public final class OpenRouterChatModel implements ChatModel, StreamingChatModel 
         for (ChatMessage message : request.messages()) {
             ObjectNode wireMessage = messages.addObject();
             wireMessage.put("role", message.role().name().toLowerCase(Locale.ROOT));
-            wireMessage.put("content", message.content());
+            addContent(wireMessage, message);
             if (message.role() == ChatMessageRole.TOOL) wireMessage.put("tool_call_id", message.toolCallId());
             if (!message.toolCalls().isEmpty()) { ArrayNode calls = wireMessage.putArray("tool_calls"); for (ToolCall call : message.toolCalls()) calls.addObject().put("id", call.id()).put("type", "function").putObject("function").put("name", call.name()).put("arguments", JSON.valueToTree(call.arguments()).toString()); }
         }
@@ -135,6 +137,15 @@ public final class OpenRouterChatModel implements ChatModel, StreamingChatModel 
             return JSON.writeValueAsString(root);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Unable to serialize OpenRouter request", exception);
+        }
+    }
+    private static void addContent(ObjectNode message, ChatMessage source) {
+        if (source.contentBlocks().size() == 1 && source.contentBlocks().getFirst() instanceof io.cortavyn.model.api.TextContent text) { message.put("content", text.text()); return; }
+        ArrayNode content = message.putArray("content");
+        for (io.cortavyn.model.api.ChatContent block : source.contentBlocks()) {
+            if (block instanceof io.cortavyn.model.api.TextContent text) content.addObject().put("type", "text").put("text", text.text());
+            else if (block instanceof ImageContent image) content.addObject().put("type", "image_url").putObject("image_url").put("url", image.uri().toString());
+            else if (!(block instanceof ReasoningContent)) throw new UnsupportedChatContentException("OpenRouter", block);
         }
     }
     String toStreamRequestJson(ChatRequest request) { try { ObjectNode root = (ObjectNode) JSON.readTree(toRequestJson(request)); root.put("stream", true); return JSON.writeValueAsString(root); } catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize OpenRouter streaming request", exception); } }

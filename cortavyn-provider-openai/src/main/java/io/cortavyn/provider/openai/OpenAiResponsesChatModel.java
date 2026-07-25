@@ -14,6 +14,10 @@ import io.cortavyn.model.api.ChatResponse;
 import io.cortavyn.model.api.ChatResponseMetadata;
 import io.cortavyn.model.api.ReasoningContent;
 import io.cortavyn.model.api.TextContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.MediaUris;
+import io.cortavyn.model.api.UnsupportedChatContentException;
 import io.cortavyn.model.api.TokenUsage;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
@@ -131,9 +135,18 @@ public final class OpenAiResponsesChatModel implements ChatModel {
                     .put("output", message.content());
             return;
         }
-        input.addObject()
-                .put("role", message.role().name().toLowerCase(Locale.ROOT))
-                .put("content", message.content());
+        ObjectNode wireMessage = input.addObject().put("role", message.role().name().toLowerCase(Locale.ROOT));
+        if (message.contentBlocks().size() == 1 && message.contentBlocks().getFirst() instanceof TextContent text) {
+            wireMessage.put("content", text.text());
+            return;
+        }
+        ArrayNode content = wireMessage.putArray("content");
+        for (ChatContent block : message.contentBlocks()) {
+            if (block instanceof TextContent text) content.addObject().put("type", "input_text").put("text", text.text());
+            else if (block instanceof ImageContent image) content.addObject().put("type", "input_image").put("image_url", image.uri().toString());
+            else if (block instanceof DocumentContent document) content.addObject().put("type", "input_file").put("filename", document.name()).put("file_data", "data:" + document.mediaType() + ";base64," + MediaUris.base64Data(document.uri(), "OpenAI Responses", document));
+            else if (!(block instanceof ReasoningContent)) throw new UnsupportedChatContentException("OpenAI Responses", block);
+        }
     }
 
     private ChatResponse toResponse(HttpResponse<String> response) {
