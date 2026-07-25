@@ -9,6 +9,7 @@
         <module>openai-chat</module>
         <module>openai-tool-agent</module>
         <module>mistral-chat</module>
+        <module>mistral-tool-agent</module>
         <module>gemini-chat</module>
         <module>openrouter-chat</module>
         <module>anthropic-chat</module>
