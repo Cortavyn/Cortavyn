@@ -14,7 +14,15 @@ public record ChatTool(ToolDefinition definition, ToolExecutor executor) {
         Objects.requireNonNull(executor, "executor must not be null");
     }
 
-    /** Creates a tool from a record input type and explicit provider-visible metadata. */
+    /**
+     * Creates a typed tool from explicit provider-visible metadata.
+     *
+     * @param name stable function name sent to the model
+     * @param description instruction that helps the model decide when to call the tool
+     * @param argumentsType record whose components become the JSON Schema input properties
+     * @param executor asynchronous application code receiving deserialized record arguments
+     * @return a tool that returns invalid model arguments as an error result instead of throwing
+     */
     public static <T> ChatTool typed(String name, String description, Class<T> argumentsType, TypedToolExecutor<T> executor) {
         Objects.requireNonNull(argumentsType, "argumentsType must not be null");
         Objects.requireNonNull(executor, "executor must not be null");
@@ -28,7 +36,13 @@ public record ChatTool(ToolDefinition definition, ToolExecutor executor) {
         });
     }
 
-    /** Creates a tool whose executor receives the current agent runtime. */
+    /**
+     * Creates an untyped tool whose executor receives the current agent runtime.
+     *
+     * @param definition provider-visible schema and descriptive metadata
+     * @param executor application code receiving raw arguments and the run context
+     * @return a runtime-aware tool
+     */
     public static ChatTool withRuntime(ToolDefinition definition, RuntimeToolExecutor executor) {
         Objects.requireNonNull(executor, "executor must not be null");
         return new ChatTool(definition, new ToolExecutor() {
@@ -37,7 +51,15 @@ public record ChatTool(ToolDefinition definition, ToolExecutor executor) {
         });
     }
 
-    /** Creates a typed tool whose executor receives the current agent runtime. */
+    /**
+     * Creates a typed, runtime-aware tool.
+     *
+     * @param name stable function name sent to the model
+     * @param description instruction that helps the model decide when to call the tool
+     * @param argumentsType record whose components become the JSON Schema input properties
+     * @param executor asynchronous application code receiving typed arguments and run context
+     * @return a runtime-aware tool
+     */
     public static <T> ChatTool typed(String name, String description, Class<T> argumentsType, RuntimeTypedToolExecutor<T> executor) {
         Objects.requireNonNull(argumentsType, "argumentsType must not be null");
         Objects.requireNonNull(executor, "executor must not be null");

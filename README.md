@@ -27,6 +27,7 @@ All production packages are `@NullMarked` with [JSpecify 1.0.0](https://jspecify
 ## Architecture
 
 The versioned [Structurizr C4 model](architecture/workspace.dsl) documents module responsibilities and dependency directions. The `cortavyn-architecture` module enforces those directions with ArchUnit as part of `mvn test`.
+The [agent and tool flow](docs/agent-tool-flow.md) explains the execution loop and runtime ownership with Mermaid diagrams.
 
 ## Typed tools
 
