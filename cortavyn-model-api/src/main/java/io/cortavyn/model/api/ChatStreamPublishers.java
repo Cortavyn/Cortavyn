@@ -19,6 +19,7 @@ public final class ChatStreamPublishers {
      * Sends an HTTP request and publishes lines from its response.  Parsing happens on the HTTP
      * client's executor, and {@link SubmissionPublisher} honours downstream demand.
      */
+    @SuppressWarnings("FutureReturnValueIgnored")
     public static Publisher<ChatStreamEvent> fromLines(
             HttpClient client, HttpRequest request, Function<HttpResponse<InputStream>, RuntimeException> error,
             Function<String, ? extends Iterable<ChatStreamEvent>> lineParser,
@@ -26,7 +27,7 @@ public final class ChatStreamPublishers {
         Objects.requireNonNull(client, "client must not be null");
         Objects.requireNonNull(request, "request must not be null");
         var publisher = new SubmissionPublisher<ChatStreamEvent>();
-        var responseFuture = client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream()).whenComplete((response, failure) -> {
+        client.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream()).whenComplete((response, failure) -> {
             if (failure != null) { publisher.closeExceptionally(failure); return; }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 try (InputStream body = response.body()) { publisher.closeExceptionally(error.apply(response)); }

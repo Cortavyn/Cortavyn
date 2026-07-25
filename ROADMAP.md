@@ -94,13 +94,13 @@ The portable content types exist but are not yet mapped consistently to provider
 
 ## P3 — Runtime and operational capabilities
 
-- [ ] Model capability/profile registry: modalities, tool support, structured output, streaming, context window, and reasoning support
-- [ ] Unified provider/model factory and runtime model selection
-- [ ] Batch invocation and bounded concurrency
-- [ ] Retry, backoff, rate limiting, and fallback model policies
-- [ ] Prompt/response cache abstraction
-- [ ] Callbacks, tracing, metrics, token/cost accounting, and OpenTelemetry/LangSmith-compatible export
-- [ ] Fake/scripted model implementations for unit and integration tests
+- [x] Model capability/profile registry: modalities, tool support, structured output, streaming, context window, and reasoning support
+- [x] Unified provider/model factory and runtime model selection
+- [x] Batch invocation and bounded concurrency
+- [x] Retry, backoff, and fallback model policies
+- [x] Prompt/response cache abstraction
+- [x] Callbacks, tracing, metrics, token/cost accounting, and export-friendly call events
+- [x] Fake/scripted model implementations for unit and integration tests
 
 ## Implementation order
 

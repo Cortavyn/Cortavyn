@@ -76,6 +76,7 @@ OPENAI_API_KEY=... mvn -pl :cortavyn-example-openai-tool-agent -am package -Prun
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-chat -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-tool-agent -am package -Prun-example
 MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-structured-output -am package -Prun-example
+MISTRAL_API_KEY=... mvn -pl :cortavyn-example-mistral-operations -am package -Prun-example
 GEMINI_API_KEY=... mvn -pl :cortavyn-example-gemini-chat -am package -Prun-example
 OPENROUTER_API_KEY=... mvn -pl :cortavyn-example-openrouter-chat -am package -Prun-example
 ANTHROPIC_API_KEY=... mvn -pl :cortavyn-example-anthropic-chat -am package -Prun-example
@@ -84,7 +85,7 @@ AZURE_OPENAI_ENDPOINT=... AZURE_OPENAI_API_KEY=... AZURE_OPENAI_DEPLOYMENT=... A
 AWS_BEDROCK_MODEL=... mvn -pl :cortavyn-example-aws-bedrock-chat -am package -Prun-example
 ```
 
-Pass a prompt as Maven property with `-Dexample.prompt="Explain durable agents in one sentence."`. The OpenAI example also accepts `OPENAI_MODEL`; Mistral uses the provider default unless `MISTRAL_MODEL` is set. The Gemini example follows LangChain's environment convention: `GOOGLE_API_KEY` takes precedence over `GEMINI_API_KEY`, and `GEMINI_MODEL` overrides its `gemini-2.5-flash` default.
+Pass a prompt as Maven property with `-Dexample.prompt="Explain durable agents in one sentence."`. Mistral examples are grouped under `examples/mistral`; the operations example demonstrates the profile registry, factory, cache, retry/backoff, bounded concurrency, and metrics. The OpenAI example also accepts `OPENAI_MODEL`; Mistral uses the provider default unless `MISTRAL_MODEL` is set. The Gemini example follows LangChain's environment convention: `GOOGLE_API_KEY` takes precedence over `GEMINI_API_KEY`, and `GEMINI_MODEL` overrides its `gemini-2.5-flash` default.
 OpenRouter uses `OPENROUTER_MODEL` to choose a catalog model, plus optional `OPENROUTER_SITE_URL` and `OPENROUTER_APP_TITLE` for application attribution.
 Azure OpenAI requires its resource endpoint, API key, deployment name, and API version.
 Bedrock uses the AWS SDK default credential and region provider chains; set `AWS_BEDROCK_MODEL` to a model ID available in the selected region.
