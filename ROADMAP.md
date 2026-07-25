@@ -62,7 +62,7 @@ Bedrock ConverseStream are normalized into portable stream events and a final co
 - [x] Reasoning deltas where supported
 - [x] Final usage and finish metadata where provided by the provider stream
 - [x] OpenAI, Anthropic, Gemini, Bedrock, Mistral, Ollama, and compatible-provider implementations
-- [ ] Cancellation and back-pressure tests
+- [x] Cancellation and back-pressure tests
 
 ### Structured output
 

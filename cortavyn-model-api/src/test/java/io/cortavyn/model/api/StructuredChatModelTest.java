@@ -1,6 +1,7 @@
 package io.cortavyn.model.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +35,7 @@ class StructuredChatModelTest {
 
         CompletionException completion = assertThrows(CompletionException.class, () -> model.withStructuredOutput(Weather.class)
                 .complete(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.USER, "Weather?")))).toCompletableFuture().join());
-        StructuredOutputException exception = (StructuredOutputException) completion.getCause();
+        StructuredOutputException exception = assertInstanceOf(StructuredOutputException.class, completion.getCause());
         assertEquals(3, exception.violations().size());
     }
 
