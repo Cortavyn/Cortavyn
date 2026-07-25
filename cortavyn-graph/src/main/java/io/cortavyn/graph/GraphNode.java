@@ -1,17 +1,7 @@
 package io.cortavyn.graph;
 
-import java.util.Objects;
+import java.util.concurrent.CompletionStage;
 
-/** A named step in an executable graph. Subclasses may add executable behavior. */
-public class GraphNode {
-    private final String id;
-
-    public GraphNode(String id) {
-        this.id = Objects.requireNonNull(id, "id must not be null");
-        if (id.isBlank()) throw new IllegalArgumentException("id must not be blank");
-    }
-
-    public final String id() {
-        return id;
-    }
-}
+/** Asynchronous, application-owned graph step. Nodes must not mutate their supplied state. */
+@FunctionalInterface
+public interface GraphNode<S> { CompletionStage<? extends NodeResult> execute(S state, NodeRuntime runtime); }

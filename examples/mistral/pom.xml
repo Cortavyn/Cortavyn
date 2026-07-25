@@ -10,5 +10,6 @@
         <module>tool-agent</module>
         <module>structured-output</module>
         <module>operations</module>
+        <module>graph</module>
     </modules>
 </project>

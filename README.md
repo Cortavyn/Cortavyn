@@ -13,7 +13,7 @@ All production packages are `@NullMarked` with [JSpecify 1.0.0](https://jspecify
 | --- | --- |
 | `cortavyn-core` | Durable run and state contracts |
 | `cortavyn-model-api` | Portable chat-model contracts |
-| `cortavyn-graph` | Graph definitions and execution contracts |
+| `cortavyn-graph` | Stateful graph runtime, checkpoints, routing, and streaming |
 | `cortavyn-chat` | Conversation and chat-session contracts |
 | `cortavyn-deep` | Planning and deep-agent contracts |
 | `cortavyn-provider-*` | Optional provider integration boundaries |
@@ -43,6 +43,33 @@ var weather = ChatTool.typed(WeatherArguments.class, arguments ->
 ```
 
 Runtime-aware tools additionally receive `ToolRuntime` with application context, an injected `ToolStore`, and a `ToolProgressWriter`. Configure it once on `ChatAgent.builder(model).runtime(runtime)`.
+
+## Graphs
+
+`cortavyn-graph` is a provider-independent, LangGraph-inspired orchestration runtime. Define a `StateSchema`, register asynchronous nodes, connect `START` and `END`, then compile the immutable graph. Nodes return a partial `StateUpdate`; channels decide whether a value is replaced, reduced, collected as a topic, or cleared after a superstep.
+
+```java
+var schema = StateSchema.builder(GraphState.adapter())
+        .channel("steps", StateChannel.topic())
+        .channel("answer", StateChannel.lastValue())
+        .build();
+
+var graph = new StateGraph<>(schema)
+        .addNode("research", (state, runtime) -> completedFuture(new StateUpdate(Map.of("steps", "research"))))
+        .addNode("answer", (state, runtime) -> completedFuture(new StateUpdate(Map.of("answer", "done"))))
+        .addEdge(StateGraph.START, "research")
+        .addEdge("research", "answer")
+        .addEdge("answer", StateGraph.END)
+        .compile();
+
+RunResult<GraphState> result = graph.invoke("customer-42", GraphState.empty()).toCompletableFuture().join();
+```
+
+`Command` combines an update with an explicit route, while `Send` dynamically fans out work. The runtime executes each superstep concurrently up to its configured limit and merges updates in stable node order. `CheckpointStore` persists a snapshot after every superstep; `InMemoryCheckpointStore` is the reference implementation. Production stores receive a `StateCodec` from the application rather than relying on implicit object serialization.
+
+Use `interruptBefore`, `interruptAfter`, or an `Interrupt` result to pause a graph. The returned `ResumeToken` resumes the same thread with a caller-supplied `StateUpdate`; `fork(checkpointId)` starts a new run from history. `stream` exposes state, update, retry, checkpoint, interrupt, debug, and custom node events through `Flow.Publisher`. `CompiledGraph.toMermaid()` exports its topology.
+
+`cortavyn-chat` provides `ChatAgentNode` as the optional bridge: applications create a run-scoped `ChatSession` from `NodeRuntime`, making the graph run ID available when constructing `ToolRuntime`. Use `GraphToolProgressWriter` in that runtime to expose tool progress as graph custom events.
 
 ## Structured output
 
