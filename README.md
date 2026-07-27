@@ -118,6 +118,17 @@ Requires Java 25 and Maven 3.9+.
 mvn verify
 ```
 
+## Publishing
+
+Library artifacts are released to Maven Central from an annotated version tag such as `v0.1.0`.
+The GitHub Actions environment `maven-central` must provide these secrets:
+
+- `CENTRAL_TOKEN_USERNAME` and `CENTRAL_TOKEN_PASSWORD`: a user token from the [Central Portal](https://central.sonatype.com/)
+- `MAVEN_GPG_PRIVATE_KEY`: the armored private signing key
+- `MAVEN_GPG_PASSPHRASE`: its passphrase
+
+Before the first release, claim and verify the `io.cortavyn` namespace in the Central Portal and publish the GPG public key to a supported key server. The workflow builds, signs, and uploads the library modules; example modules are deliberately excluded. It leaves a validated deployment in the Central Portal for an explicit final **Publish** action, because Central artifacts cannot be modified or removed once public.
+
 ## Examples
 
 The examples are executable smoke-test applications. They are compiled by the normal build but never call a provider automatically. Every chat-provider example now runs a short two-turn research conversation: it creates an initial answer and then asks the same model to critically review and improve it. Every graph-provider example runs a durable four-step workflow (plan, research, review, synthesis), prints its checkpoint count, and renders the resulting graph as Mermaid.

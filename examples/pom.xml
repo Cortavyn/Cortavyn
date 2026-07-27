@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
     <modelVersion>4.0.0</modelVersion>
-    <parent><groupId>io.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+    <parent><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
     <artifactId>cortavyn-examples</artifactId>
     <packaging>pom</packaging>
     <name>Cortavyn Examples</name>
+    <!-- Examples are built and tested, but are intentionally not Maven artifacts. -->
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
     <modules>
         <module>deep</module>
         <module>deep-support</module>

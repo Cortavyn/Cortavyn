@@ -1,0 +1,39 @@
+name: Publish to Maven Central
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish Maven artifacts
+    runs-on: ubuntu-latest
+    environment: maven-central
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK and Maven Central credentials
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_TOKEN_USERNAME
+          server-password: CENTRAL_TOKEN_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Publish ${{ github.ref_name }}
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mvn --batch-mode versions:set -DnewVersion="$VERSION" -DgenerateBackupPoms=false
+          mvn --batch-mode --no-transfer-progress deploy -Pcentral-release -Dgpg.passphrase="$MAVEN_GPG_PASSPHRASE"

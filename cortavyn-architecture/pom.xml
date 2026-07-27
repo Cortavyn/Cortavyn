@@ -1,32 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
     <modelVersion>4.0.0</modelVersion>
-    <parent><groupId>io.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
+    <parent><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.1.0-SNAPSHOT</version></parent>
     <artifactId>cortavyn-architecture</artifactId>
     <name>Cortavyn Architecture Tests</name>
     <dependencies>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-core</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-model-api</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-graph</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-chat</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-deep</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-openai</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-anthropic</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-mistral</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-gemini</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-ollama</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-openai-compatible</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-groq</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-deepseek</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-xai</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-moonshot</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-qwen</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-cloudflare</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-vllm</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-vercel-ai-gateway</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-openrouter</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-azure-openai</artifactId><version>${project.version}</version><scope>test</scope></dependency>
-        <dependency><groupId>io.cortavyn</groupId><artifactId>cortavyn-provider-aws-bedrock</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-core</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-model-api</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-graph</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-chat</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-deep</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-openai</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-anthropic</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-mistral</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-gemini</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-ollama</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-openai-compatible</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-groq</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-deepseek</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-xai</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-moonshot</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-qwen</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-cloudflare</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-vllm</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-vercel-ai-gateway</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-openrouter</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-azure-openai</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-provider-aws-bedrock</artifactId><version>${project.version}</version><scope>test</scope></dependency>
         <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><version>${archunit.version}</version><scope>test</scope></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
     </dependencies>
