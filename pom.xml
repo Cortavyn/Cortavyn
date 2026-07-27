@@ -82,6 +82,7 @@
         <maven.javadoc.plugin.version>3.11.2</maven.javadoc.plugin.version>
         <maven.gpg.plugin.version>3.2.7</maven.gpg.plugin.version>
         <central.publishing.maven.plugin.version>0.9.0</central.publishing.maven.plugin.version>
+        <central.skipPublishing>false</central.skipPublishing>
     </properties>
 
     <dependencyManagement>
@@ -225,6 +226,7 @@
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
+                            <skipPublishing>${central.skipPublishing}</skipPublishing>
                             <!-- Keep the validated deployment reviewable in the Portal. -->
                             <autoPublish>false</autoPublish>
                         </configuration>

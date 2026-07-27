@@ -3,6 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.0.1-SNAPSHOT</version></parent>
     <artifactId>cortavyn-provider-aws-bedrock</artifactId>
+    <description>Durable agent systems for the JVM.</description>
     <name>Cortavyn Provider: AWS Bedrock</name>
     <dependencies>
         <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-model-api</artifactId><version>${project.version}</version></dependency>

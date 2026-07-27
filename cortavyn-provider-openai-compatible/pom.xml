@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0">
     <modelVersion>4.0.0</modelVersion><parent><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.0.1-SNAPSHOT</version></parent>
-    <artifactId>cortavyn-provider-openai-compatible</artifactId><name>Cortavyn Provider: OpenAI Compatible</name>
+    <artifactId>cortavyn-provider-openai-compatible</artifactId>
+    <description>Durable agent systems for the JVM.</description><name>Cortavyn Provider: OpenAI Compatible</name>
     <dependencies>
         <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-model-api</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${jackson.version}</version></dependency>

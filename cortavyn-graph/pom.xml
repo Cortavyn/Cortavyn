@@ -3,6 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.0.1-SNAPSHOT</version></parent>
     <artifactId>cortavyn-graph</artifactId>
+    <description>Durable agent systems for the JVM.</description>
     <name>Cortavyn Graph</name>
     <dependencies>
         <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-core</artifactId><version>${project.version}</version></dependency>

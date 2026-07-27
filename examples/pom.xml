@@ -8,6 +8,7 @@
     <!-- Examples are built and tested, but are intentionally not Maven artifacts. -->
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
+        <central.skipPublishing>true</central.skipPublishing>
     </properties>
     <modules>
         <module>deep</module>

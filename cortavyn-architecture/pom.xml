@@ -3,7 +3,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.0.1-SNAPSHOT</version></parent>
     <artifactId>cortavyn-architecture</artifactId>
+    <description>Durable agent systems for the JVM.</description>
     <name>Cortavyn Architecture Tests</name>
+    <properties>
+        <central.skipPublishing>true</central.skipPublishing>
+    </properties>
     <dependencies>
         <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-core</artifactId><version>${project.version}</version><scope>test</scope></dependency>
         <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-model-api</artifactId><version>${project.version}</version><scope>test</scope></dependency>

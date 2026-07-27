@@ -3,6 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <parent><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-parent</artifactId><version>0.0.1-SNAPSHOT</version></parent>
     <artifactId>cortavyn-core</artifactId>
+    <description>Durable agent systems for the JVM.</description>
     <name>Cortavyn Core</name>
     <dependencies>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
