@@ -4,6 +4,7 @@ import com.caoccao.qjs4j.core.JSContext;
 import com.caoccao.qjs4j.core.JSRuntime;
 import com.caoccao.qjs4j.core.JSRuntimeOptions;
 import com.caoccao.qjs4j.core.JSValue;
+import com.caoccao.qjs4j.core.JSNativeFunction;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,11 +16,21 @@ final class QuickJsSession implements AutoCloseable {
     private final JSRuntime runtime;
     private final JSContext context;
 
-    QuickJsSession(QuickJsInterpreterLimits limits) {
+    QuickJsSession(QuickJsInterpreterLimits limits) { this(limits, List.of(), (name, arguments) -> "{\"error\":\"tool calling is disabled\"}"); }
+    QuickJsSession(QuickJsInterpreterLimits limits, List<String> toolNames, ToolBridge bridge) {
         this.limits = limits;
         runtime = new JSRuntime(new JSRuntimeOptions().setMaxStackSize(limits.maxStackBytes()));
         context = runtime.createContext();
         context.eval(bootstrap(limits.maxOutputCharacters()));
+        if (!toolNames.isEmpty()) {
+            com.caoccao.qjs4j.core.JSObject tools = context.createJSObject();
+            for (String name : toolNames) tools.set(name, new JSNativeFunction(context, name, 1, (current, receiver, arguments) -> {
+                current.getGlobalObject().set("__cortavynToolArguments", arguments.length == 0 ? current.eval("undefined") : arguments[0]);
+                try { return current.eval("(" + bridge.call(name, String.valueOf(current.eval("JSON.stringify(globalThis.__cortavynToolArguments)").toJavaObject())) + ")"); }
+                finally { current.eval("globalThis.__cortavynToolArguments = undefined;"); }
+            }));
+            context.getGlobalObject().set("tools", tools);
+        }
     }
 
     DeepInterpreterResult eval(String code) {
@@ -73,6 +84,7 @@ final class QuickJsSession implements AutoCloseable {
         context.close();
         runtime.close();
     }
+    @FunctionalInterface interface ToolBridge { String call(String name, String argumentsJson); }
 
     private static String bootstrap(int maxOutputCharacters) {
         return """

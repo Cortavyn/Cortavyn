@@ -22,13 +22,17 @@ import java.util.concurrent.TimeUnit;
 /** Thread-scoped, resource-limited QuickJS interpreter with no Java host bindings. */
 public final class QuickJsInterpreter implements DeepInterpreter {
     private final QuickJsInterpreterLimits limits;
+    private final java.util.Map<String, DeepInterpreterTool> tools;
     private final ConcurrentMap<String, Session> sessions = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public QuickJsInterpreter() { this(QuickJsInterpreterLimits.defaults()); }
+    public QuickJsInterpreter() { this(QuickJsInterpreterLimits.defaults(), List.of()); }
 
-    public QuickJsInterpreter(QuickJsInterpreterLimits limits) {
+    public QuickJsInterpreter(QuickJsInterpreterLimits limits) { this(limits, List.of()); }
+    /** Enables only the explicitly provided programmatic tools; absent tools remain unreachable. */
+    public QuickJsInterpreter(QuickJsInterpreterLimits limits, List<DeepInterpreterTool> tools) {
         this.limits = Objects.requireNonNull(limits, "limits must not be null");
+        this.tools = tools.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(DeepInterpreterTool::name, tool -> tool));
     }
 
     @Override public CompletionStage<DeepInterpreterResult> eval(String threadId, String code) {
@@ -36,7 +40,7 @@ public final class QuickJsInterpreter implements DeepInterpreter {
         Objects.requireNonNull(code, "code must not be null");
         CompletableFuture<DeepInterpreterResult> evaluation = CompletableFuture.supplyAsync(() -> {
             try {
-                return sessions.computeIfAbsent(threadId, ignored -> new Session(limits)).eval(code);
+                return sessions.computeIfAbsent(threadId, ignored -> new Session(limits, tools.keySet())).eval(code, tools);
             } catch (RuntimeException failure) {
                 return DeepInterpreterResult.failure("Could not start JavaScript worker: " + Session.message(failure), List.of());
             }
@@ -64,7 +68,7 @@ public final class QuickJsInterpreter implements DeepInterpreter {
         private final BufferedReader reader;
         private final BufferedReader errorReader;
 
-        private Session(QuickJsInterpreterLimits limits) {
+        private Session(QuickJsInterpreterLimits limits, java.util.Set<String> toolNames) {
             try {
                 process = new ProcessBuilder(
                         javaExecutable(),
@@ -75,7 +79,8 @@ public final class QuickJsInterpreter implements DeepInterpreter {
                         Long.toString(limits.executionTimeout().toMillis()),
                         Long.toString(limits.maxMemoryBytes()),
                         Long.toString(limits.maxStackBytes()),
-                        Integer.toString(limits.maxOutputCharacters()))
+                        Integer.toString(limits.maxOutputCharacters()),
+                        String.join(",", toolNames))
                         .start();
                 writer = process.outputWriter(StandardCharsets.UTF_8);
                 reader = process.inputReader(StandardCharsets.UTF_8);
@@ -85,12 +90,19 @@ public final class QuickJsInterpreter implements DeepInterpreter {
             }
         }
 
-        private synchronized DeepInterpreterResult eval(String code) {
+        private synchronized DeepInterpreterResult eval(String code, java.util.Map<String, DeepInterpreterTool> tools) {
             try {
                 writer.write(encode(code));
                 writer.newLine();
                 writer.flush();
                 String value = read("result value");
+                while (value.startsWith("CALL ")) {
+                    String[] call = value.split(" ", 3);
+                    DeepInterpreterTool tool = call.length == 3 ? tools.get(call[1]) : null;
+                    String response = tool == null ? "{\"error\":\"tool not allowed\"}" : tool.call(decode(call[2])).toCompletableFuture().join();
+                    writer.write("RETURN " + encode(response)); writer.newLine(); writer.flush();
+                    value = read("result value");
+                }
                 String error = read("result error");
                 int consoleCount = Integer.parseInt(read("console size"));
                 List<DeepInterpreterResult.ConsoleMessage> console = new java.util.ArrayList<>(consoleCount);

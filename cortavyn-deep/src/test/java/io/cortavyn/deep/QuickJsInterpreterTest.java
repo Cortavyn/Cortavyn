@@ -10,6 +10,18 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class QuickJsInterpreterTest {
+
+    @Test
+    void invokesOnlyExplicitlyAllowlistedProgrammaticTools() {
+        DeepInterpreterTool echo = new DeepInterpreterTool() {
+            @Override public String name() { return "echo"; }
+            @Override public java.util.concurrent.CompletionStage<String> call(String argumentsJson) { return java.util.concurrent.CompletableFuture.completedFuture("{\"answer\":42}"); }
+        };
+        try (QuickJsInterpreter interpreter = new QuickJsInterpreter(QuickJsInterpreterLimits.defaults(), List.of(echo))) {
+            assertEquals("{\"type\":\"number\",\"value\":42}", interpreter.eval("thread", "tools.echo({ value: 1 }).answer").toCompletableFuture().join().value());
+            assertTrue(interpreter.eval("thread", "typeof tools.notAllowed").toCompletableFuture().join().value().contains("undefined"));
+        }
+    }
     @Test
     void preservesStatePerThreadAndIsolatesOtherThreads() {
         try (QuickJsInterpreter interpreter = new QuickJsInterpreter()) {

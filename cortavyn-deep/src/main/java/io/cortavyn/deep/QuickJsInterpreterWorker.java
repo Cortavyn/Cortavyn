@@ -8,13 +8,14 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 
 /** Isolated JVM entry point used to enforce the configured interpreter heap limit. */
 public final class QuickJsInterpreterWorker {
     private QuickJsInterpreterWorker() {}
 
     public static void main(String[] args) throws IOException {
-        if (args.length != 4) throw new IllegalArgumentException("Expected interpreter limits as arguments");
+        if (args.length != 5) throw new IllegalArgumentException("Expected interpreter limits and tool names as arguments");
         QuickJsInterpreterLimits limits = new QuickJsInterpreterLimits(
                 Duration.ofMillis(Long.parseLong(args[0])),
                 Long.parseLong(args[1]),
@@ -22,7 +23,8 @@ public final class QuickJsInterpreterWorker {
                 Integer.parseInt(args[3]));
         BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         BufferedWriter output = new BufferedWriter(new OutputStreamWriter(System.out, StandardCharsets.UTF_8));
-        try (QuickJsSession session = new QuickJsSession(limits)) {
+        List<String> tools = args[4].isBlank() ? List.of() : List.of(args[4].split(","));
+        try (QuickJsSession session = new QuickJsSession(limits, tools, (name, arguments) -> call(input, output, name, arguments))) {
             String line;
             while ((line = input.readLine()) != null) {
                 DeepInterpreterResult result = session.eval(decode(line));
@@ -35,6 +37,14 @@ public final class QuickJsInterpreterWorker {
                 output.flush();
             }
         }
+    }
+    private static String call(BufferedReader input, BufferedWriter output, String name, String arguments) {
+        try {
+            write(output, "CALL " + name + " " + encode(arguments)); output.flush();
+            String response = input.readLine();
+            if (response == null || !response.startsWith("RETURN ")) return "{\"error\":\"tool bridge closed\"}";
+            return decode(response.substring("RETURN ".length()));
+        } catch (IOException failure) { return "{\"error\":\"tool bridge failed\"}"; }
     }
 
     private static String decode(String value) {
