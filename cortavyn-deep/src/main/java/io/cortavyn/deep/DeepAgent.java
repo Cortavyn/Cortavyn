@@ -59,6 +59,7 @@ public final class DeepAgent implements AutoCloseable {
     private final DeepTodoStore todoStore;
     private final @org.jspecify.annotations.Nullable Sandbox sandbox;
     private final @org.jspecify.annotations.Nullable DeepInterpreter interpreter;
+    private final DeepHarnessProfile harnessProfile;
     // The plan is deliberately internal: it gives normal invoke/resume calls graph checkpoints
     // without requiring an application to construct a StateGraph itself.
     private final DeepAgentPlan plan;
@@ -91,6 +92,7 @@ public final class DeepAgent implements AutoCloseable {
         todoStore = builder.todoStore;
         sandbox = builder.sandbox;
         interpreter = builder.interpreter;
+        harnessProfile = builder.harnessProfile;
         subagentRegistry = new SubagentRegistry(builder.taskStore, (name, prompt) -> {
             DeepAgent subagent = subagents.get(name);
             if (subagent == null) return CompletableFuture.failedStage(new IllegalArgumentException("unknown subagent: " + name));
@@ -301,15 +303,15 @@ public final class DeepAgent implements AutoCloseable {
     }
     private ChatTool[] allTools(String threadId) {
         List<ChatTool> result = new ArrayList<>(tools);
-        result.addAll(DeepTools.workspace(workspaceFor(threadId)));
-        result.add(DeepTools.todos(todoStore));
-        result.addAll(DeepTools.skills(skills));
-        result.addAll(DeepTools.memory(memory, memoryNamespace));
-        if (sandbox != null) result.addAll(DeepTools.sandbox(sandbox));
-        if (interpreter != null) result.add(DeepTools.interpreter(interpreter));
-        result.addAll(DeepTools.subagents(!subagents.isEmpty(), subagentRegistry));
+        if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.WORKSPACE)) result.addAll(DeepTools.workspace(workspaceFor(threadId)));
+        if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.TODOS)) result.add(DeepTools.todos(todoStore));
+        if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.SKILLS)) result.addAll(DeepTools.skills(skills));
+        if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.MEMORY)) result.addAll(DeepTools.memory(memory, memoryNamespace));
+        if (sandbox != null && harnessProfile.enables(DeepHarnessProfile.BuiltIn.SANDBOX)) result.addAll(DeepTools.sandbox(sandbox));
+        if (interpreter != null && harnessProfile.enables(DeepHarnessProfile.BuiltIn.INTERPRETER)) result.add(DeepTools.interpreter(interpreter));
+        if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.SUBAGENTS)) result.addAll(DeepTools.subagents(!subagents.isEmpty(), subagentRegistry));
         mcpSources.forEach(source -> result.addAll(source.tools()));
-        result.addAll(DeepTools.mcpResources(mcpSources));
+        if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.MCP_RESOURCES)) result.addAll(DeepTools.mcpResources(mcpSources));
         return result.toArray(ChatTool[]::new);
     }
     public static final class Builder {
@@ -328,6 +330,7 @@ public final class DeepAgent implements AutoCloseable {
         private DeepTodoStore todoStore = DeepTodoStore.inMemory();
         private @org.jspecify.annotations.Nullable Sandbox sandbox;
         private @org.jspecify.annotations.Nullable DeepInterpreter interpreter;
+        private DeepHarnessProfile harnessProfile = DeepHarnessProfile.defaults();
         private DeepTaskStore taskStore = DeepTaskStore.inMemory();
         private Builder(ChatModel model) { this.model = Objects.requireNonNull(model, "model must not be null"); }
         public Builder tools(ChatTool... value) { tools = List.of(value); return this; }
@@ -351,6 +354,8 @@ public final class DeepAgent implements AutoCloseable {
         public Builder sandbox(Sandbox value) { sandbox = Objects.requireNonNull(value, "sandbox must not be null"); return this; }
         /** Enables isolated JavaScript evaluation with the supplied interpreter. */
         public Builder interpreter(DeepInterpreter value) { interpreter = Objects.requireNonNull(value, "interpreter must not be null"); return this; }
+        /** Selects built-ins suitable for a concrete model/deployment. Application tools remain available. */
+        public Builder harnessProfile(DeepHarnessProfile value) { harnessProfile = Objects.requireNonNull(value, "harnessProfile must not be null"); return this; }
         public Builder taskStore(DeepTaskStore value) { taskStore = Objects.requireNonNull(value, "taskStore must not be null"); return this; }
         public DeepAgent build() { return new DeepAgent(this); }
     }
