@@ -33,6 +33,16 @@ final class DeepTools {
                 ChatTool.typed("read_memory", "Read persistent caller-scoped agent memory.", ReadMemory.class, ignored -> memory.load(namespace).thenApply(ToolExecutionResult::success)),
                 ChatTool.typed("write_memory", "Replace persistent caller-scoped agent memory with reviewed instructions or preferences.", WriteMemory.class, args -> memory.save(namespace, args.content()).thenApply(ignored -> ToolExecutionResult.success("Memory updated."))));
     }
+    static ChatTool interpreter(DeepInterpreter interpreter) {
+        return ChatTool.typed("eval", "Evaluate isolated JavaScript with no shell, network, filesystem, or Java host access.", Eval.class,
+                (args, runtime) -> interpreter.eval(runtime.runId(), args.code()).thenApply(DeepTools::interpreterResult));
+    }
+    private static ToolExecutionResult interpreterResult(DeepInterpreterResult result) {
+        StringBuilder content = new StringBuilder();
+        result.console().forEach(entry -> content.append(entry.level().name().toLowerCase(java.util.Locale.ROOT)).append(": ").append(entry.text()).append('\n'));
+        if (result.error() != null) return ToolExecutionResult.failure(content.append("JavaScript failed: ").append(result.error()).toString());
+        return ToolExecutionResult.success(content.append("Result: ").append(result.value()).toString());
+    }
     static List<ChatTool> sandbox(Sandbox sandbox) { return List.of(ChatTool.typed("execute", "Execute an argument-vector command in the configured sandbox.", Execute.class, args -> sandbox.execute(args.command(), java.time.Duration.ofSeconds(args.timeoutSeconds())).thenApply(result -> ToolExecutionResult.success("exit=" + result.exitCode() + "\nstdout:\n" + result.stdout() + "\nstderr:\n" + result.stderr())))); }
     static List<ChatTool> mcpResources(List<McpToolSource> sources) {
         if (sources.isEmpty()) return List.of();
@@ -62,5 +72,6 @@ final class DeepTools {
     record ReadMemory() { }
     record WriteMemory(String content) { }
     record Execute(List<String> command, long timeoutSeconds) { public Execute { if (timeoutSeconds <= 0) throw new IllegalArgumentException("timeoutSeconds must be positive"); } }
+    record Eval(String code) { }
     record ReadMcpResource(String source, String path) { }
 }

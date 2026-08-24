@@ -17,6 +17,11 @@ import io.cortavyn.model.api.ChatMessageRole;
 import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatGenerationParameters;
+import io.cortavyn.model.api.ChatCompletion;
+import io.cortavyn.model.api.ChatResponse;
+import io.cortavyn.model.api.ChatStreamEvent;
+import io.cortavyn.model.api.ChatTextDelta;
+import io.cortavyn.model.api.StreamingChatModel;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
 import java.util.ArrayList;
@@ -29,10 +34,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Flow;
 import java.util.function.Consumer;
 
 /** Durable, tool-using agent harness with a virtual workspace and task planning. */
-public final class DeepAgent {
+public final class DeepAgent implements AutoCloseable {
     private final ChatModel model;
     private final List<ChatTool> tools;
     private final String systemPrompt;
@@ -51,6 +57,7 @@ public final class DeepAgent {
     private final List<McpToolSource> mcpSources;
     private final DeepTodoStore todoStore;
     private final @org.jspecify.annotations.Nullable Sandbox sandbox;
+    private final @org.jspecify.annotations.Nullable DeepInterpreter interpreter;
     // The plan is deliberately internal: it gives normal invoke/resume calls graph checkpoints
     // without requiring an application to construct a StateGraph itself.
     private final DeepAgentPlan plan;
@@ -72,6 +79,7 @@ public final class DeepAgent {
             // A specialist gets a fresh agent/context. A configured parent workspace may be
             // wrapped so a specialist can only see the paths delegated to it.
             Builder child = DeepAgent.builder(model).systemPrompt(subagent.systemPrompt()).tools(subagent.tools().toArray(ChatTool[]::new)).contextPolicy(contextPolicy).approvalPolicy(subagent.approvalPolicy() == null ? builder.approvalPolicy : subagent.approvalPolicy());
+            if (builder.interpreter != null) child.interpreter(builder.interpreter);
             if (configuredWorkspace != null) child.workspace(subagent.workspacePermissions().isEmpty() ? configuredWorkspace : new PermissionedWorkspace(configuredWorkspace, subagent.workspacePermissions()));
             configuredSubagents.put(subagent.name(), child.build());
         }
@@ -81,6 +89,7 @@ public final class DeepAgent {
         mcpSources = List.copyOf(builder.mcpSources);
         todoStore = builder.todoStore;
         sandbox = builder.sandbox;
+        interpreter = builder.interpreter;
         subagentRegistry = new SubagentRegistry(builder.taskStore, (name, prompt) -> {
             DeepAgent subagent = subagents.get(name);
             if (subagent == null) return CompletableFuture.failedStage(new IllegalArgumentException("unknown subagent: " + name));
@@ -93,6 +102,8 @@ public final class DeepAgent {
         plan = new DeepAgentPlan(new StateGraph<>(schema).addNode("deep-loop", this::executeGraphNode).addEdge(StateGraph.START, "deep-loop").addEdge("deep-loop", StateGraph.END).compile());
     }
     public static Builder builder(ChatModel model) { return new Builder(model); }
+    /** Releases thread-scoped interpreter sessions and their runtime resources. */
+    @Override public void close() { if (interpreter != null) interpreter.close(); }
     /** Returns durable checkpoints created by this agent's internal graph for one thread. */
     public List<Checkpoint> history(String threadId) { return plan.graph().history(threadId); }
     public CompletionStage<DeepRun> invoke(String threadId, String input) {
@@ -127,8 +138,23 @@ public final class DeepAgent {
             });
         };
     }
+    /** Continues an approved run while emitting progress and streamed model text. */
+    public java.util.concurrent.Flow.Publisher<DeepEvent> resumeStream(String threadId, List<ApprovalDecision> decisions) {
+        return subscriber -> {
+            java.util.concurrent.SubmissionPublisher<DeepEvent> publisher = new java.util.concurrent.SubmissionPublisher<>();
+            publisher.subscribe(subscriber);
+            resume(threadId, decisions, publisher::submit, false).whenComplete((run, failure) -> {
+                if (failure != null) publisher.submit(new DeepEvent.Failed(failure));
+                else publisher.submit(run.interrupt() == null ? new DeepEvent.Completed(run) : new DeepEvent.Interrupted(run));
+                publisher.close();
+            });
+        };
+    }
     /** Continues a paused run after one decision per pending action, in request order. */
     public CompletionStage<DeepRun> resume(String threadId, List<ApprovalDecision> decisions) {
+        return resume(threadId, decisions, ignored -> { }, true);
+    }
+    private CompletionStage<DeepRun> resume(String threadId, List<ApprovalDecision> decisions, Consumer<DeepEvent> events, boolean graphDriven) {
         return runStore.get(threadId).thenCompose(found -> {
         DeepPendingRun state = found.orElseThrow(() -> new IllegalArgumentException("no pending approval for thread: " + threadId));
         if (decisions.size() != state.calls().size()) return CompletableFuture.failedStage(new IllegalArgumentException("one decision is required for each pending action"));
@@ -138,7 +164,12 @@ public final class DeepAgent {
             List<ChatMessage> messages = new ArrayList<>(state.messages());
             List<CompletableFuture<ChatMessage>> results = new ArrayList<>();
             for (int index = 0; index < state.calls().size(); index++) results.add(resolve(threadId, state.calls().get(index), decisions.get(index), ignored -> { }).toCompletableFuture());
-            return CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).thenCompose(ignored -> { results.forEach(result -> messages.add(result.join())); return runStore.delete(threadId).thenCompose(deleted -> executeGraph(threadId, messages, state.iteration() + 1)); });
+            return CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).thenCompose(ignored -> {
+                results.forEach(result -> messages.add(result.join()));
+                return runStore.delete(threadId).thenCompose(deleted -> graphDriven
+                        ? executeGraph(threadId, messages, state.iteration() + 1)
+                        : run(threadId, messages, state.iteration() + 1, events));
+            });
         });
         });
     }
@@ -147,7 +178,7 @@ public final class DeepAgent {
         ChatTool[] available = allTools(threadId); List<ToolDefinition> definitions = java.util.Arrays.stream(available).map(ChatTool::definition).toList();
         // Compact before every model turn: tool results can otherwise grow the conversation far
         // beyond a provider context window during long-running tasks.
-        return compactHistory(messages).thenCompose(activeMessages -> model.complete(new ChatRequest(activeMessages, definitions, ChatGenerationParameters.defaults(), Map.of())).thenCompose(response -> {
+        return compactHistory(messages).thenCompose(activeMessages -> complete(new ChatRequest(activeMessages, definitions, ChatGenerationParameters.defaults(), Map.of()), events).thenCompose(response -> {
             List<ChatMessage> updated = new ArrayList<>(activeMessages); updated.add(response.message()); events.accept(new DeepEvent.Message(response.message())); List<ToolCall> calls = response.message().toolCalls();
             if (calls.isEmpty()) return todoStore.read(threadId).thenApply(todos -> new DeepRun(threadId, new Conversation(threadId, updated), workspaceFor(threadId), todos, null));
             List<ToolCall> sensitive = calls.stream().filter(call -> approvalPolicy.requiresApproval(call.name())).toList();
@@ -161,6 +192,30 @@ public final class DeepAgent {
             List<CompletableFuture<ChatMessage>> results = calls.stream().map(call -> execute(threadId, call, events)).map(stage -> stage.toCompletableFuture()).toList();
             return CompletableFuture.allOf(results.toArray(CompletableFuture[]::new)).thenCompose(ignored -> { results.forEach(result -> updated.add(result.join())); return run(threadId, updated, iteration + 1, events); });
         }));
+    }
+
+    private CompletionStage<ChatResponse> complete(ChatRequest request, Consumer<DeepEvent> events) {
+        if (!(model instanceof StreamingChatModel streamingModel)) {
+            return model.complete(request);
+        }
+        CompletableFuture<ChatResponse> response = new CompletableFuture<>();
+        streamingModel.stream(request).subscribe(new Flow.Subscriber<>() {
+            @Override public void onSubscribe(Flow.Subscription subscription) { subscription.request(Long.MAX_VALUE); }
+            @Override public void onNext(ChatStreamEvent event) {
+                if (event instanceof ChatTextDelta delta) {
+                    events.accept(new DeepEvent.TextDelta(delta.text()));
+                } else if (event instanceof ChatCompletion completion) {
+                    response.complete(completion.response());
+                }
+            }
+            @Override public void onError(Throwable failure) { response.completeExceptionally(failure); }
+            @Override public void onComplete() {
+                if (!response.isDone()) {
+                    response.completeExceptionally(new IllegalStateException("model stream completed without a ChatCompletion"));
+                }
+            }
+        });
+        return response;
     }
     private java.util.concurrent.CompletionStage<? extends io.cortavyn.graph.NodeResult> executeGraphNode(GraphState state, io.cortavyn.graph.NodeRuntime runtime) {
         @SuppressWarnings("unchecked") List<ChatMessage> messages = state.get(GRAPH_MESSAGES, List.class);
@@ -246,6 +301,7 @@ public final class DeepAgent {
         result.addAll(DeepTools.skills(skills));
         result.addAll(DeepTools.memory(memory, memoryNamespace));
         if (sandbox != null) result.addAll(DeepTools.sandbox(sandbox));
+        if (interpreter != null) result.add(DeepTools.interpreter(interpreter));
         result.addAll(DeepTools.subagents(!subagents.isEmpty(), subagentRegistry));
         mcpSources.forEach(source -> result.addAll(source.tools()));
         result.addAll(DeepTools.mcpResources(mcpSources));
@@ -266,6 +322,7 @@ public final class DeepAgent {
         private List<McpToolSource> mcpSources = List.of();
         private DeepTodoStore todoStore = DeepTodoStore.inMemory();
         private @org.jspecify.annotations.Nullable Sandbox sandbox;
+        private @org.jspecify.annotations.Nullable DeepInterpreter interpreter;
         private DeepTaskStore taskStore = DeepTaskStore.inMemory();
         private Builder(ChatModel model) { this.model = Objects.requireNonNull(model, "model must not be null"); }
         public Builder tools(ChatTool... value) { tools = List.of(value); return this; }
@@ -287,6 +344,8 @@ public final class DeepAgent {
         public Builder todoStore(DeepTodoStore value) { todoStore = Objects.requireNonNull(value, "todoStore must not be null"); return this; }
         /** Enables the execute tool through an application-provided isolated execution backend. */
         public Builder sandbox(Sandbox value) { sandbox = Objects.requireNonNull(value, "sandbox must not be null"); return this; }
+        /** Enables isolated JavaScript evaluation with the supplied interpreter. */
+        public Builder interpreter(DeepInterpreter value) { interpreter = Objects.requireNonNull(value, "interpreter must not be null"); return this; }
         public Builder taskStore(DeepTaskStore value) { taskStore = Objects.requireNonNull(value, "taskStore must not be null"); return this; }
         public DeepAgent build() { return new DeepAgent(this); }
     }
