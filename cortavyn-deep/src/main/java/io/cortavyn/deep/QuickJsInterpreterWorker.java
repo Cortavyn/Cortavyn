@@ -20,9 +20,9 @@ public final class QuickJsInterpreterWorker {
                 Long.parseLong(args[1]),
                 Long.parseLong(args[2]),
                 Integer.parseInt(args[3]));
-        try (BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
-             BufferedWriter output = new BufferedWriter(new OutputStreamWriter(System.out, StandardCharsets.UTF_8));
-             QuickJsSession session = new QuickJsSession(limits)) {
+        BufferedReader input = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        BufferedWriter output = new BufferedWriter(new OutputStreamWriter(System.out, StandardCharsets.UTF_8));
+        try (QuickJsSession session = new QuickJsSession(limits)) {
             String line;
             while ((line = input.readLine()) != null) {
                 DeepInterpreterResult result = session.eval(decode(line));

@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /** Thread-scoped, resource-limited QuickJS interpreter with no Java host bindings. */
 public final class QuickJsInterpreter implements DeepInterpreter {
@@ -33,13 +34,17 @@ public final class QuickJsInterpreter implements DeepInterpreter {
     @Override public CompletionStage<DeepInterpreterResult> eval(String threadId, String code) {
         Objects.requireNonNull(threadId, "threadId must not be null");
         Objects.requireNonNull(code, "code must not be null");
-        return CompletableFuture.supplyAsync(() -> {
+        CompletableFuture<DeepInterpreterResult> evaluation = CompletableFuture.supplyAsync(() -> {
             try {
                 return sessions.computeIfAbsent(threadId, ignored -> new Session(limits)).eval(code);
             } catch (RuntimeException failure) {
                 return DeepInterpreterResult.failure("Could not start JavaScript worker: " + Session.message(failure), List.of());
             }
         }, executor);
+        return evaluation.orTimeout(timeoutMillis(limits.executionTimeout()), TimeUnit.MILLISECONDS).exceptionally(failure -> {
+            closeThread(threadId);
+            return DeepInterpreterResult.failure("JavaScript execution timeout", List.of());
+        });
     }
 
     @Override public void closeThread(String threadId) {
@@ -54,14 +59,12 @@ public final class QuickJsInterpreter implements DeepInterpreter {
     }
 
     private static final class Session implements AutoCloseable {
-        private final QuickJsInterpreterLimits limits;
         private final Process process;
         private final BufferedWriter writer;
         private final BufferedReader reader;
         private final BufferedReader errorReader;
 
         private Session(QuickJsInterpreterLimits limits) {
-            this.limits = limits;
             try {
                 process = new ProcessBuilder(
                         javaExecutable(),
@@ -133,7 +136,7 @@ public final class QuickJsInterpreter implements DeepInterpreter {
             }
         }
 
-        @Override public synchronized void close() {
+        @Override public void close() {
             try {
                 writer.close();
                 reader.close();
@@ -165,6 +168,14 @@ public final class QuickJsInterpreter implements DeepInterpreter {
         private static String message(RuntimeException failure) {
             String message = failure.getMessage();
             return message == null || message.isBlank() ? failure.getClass().getSimpleName() : message;
+        }
+    }
+
+    private static long timeoutMillis(Duration timeout) {
+        try {
+            return Math.addExact(timeout.toMillis(), 1_000L);
+        } catch (ArithmeticException ignored) {
+            return Long.MAX_VALUE;
         }
     }
 }

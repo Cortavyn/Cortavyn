@@ -48,7 +48,7 @@ class QuickJsInterpreterTest {
 
     @Test
     void enforcesExecutionAndOutputLimits() {
-        QuickJsInterpreterLimits limits = new QuickJsInterpreterLimits(Duration.ofMillis(10), 8L * 1024 * 1024, 320L * 1024, 8);
+        QuickJsInterpreterLimits limits = new QuickJsInterpreterLimits(Duration.ofMillis(10), 64L * 1024 * 1024, 320L * 1024, 8);
         try (QuickJsInterpreter interpreter = new QuickJsInterpreter(limits)) {
             DeepInterpreterResult output = interpreter.eval("thread", "console.log('0123456789'); 'done'").toCompletableFuture().join();
             assertEquals("01234567", output.console().getFirst().text());
