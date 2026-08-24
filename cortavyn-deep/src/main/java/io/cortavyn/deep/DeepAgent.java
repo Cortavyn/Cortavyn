@@ -25,6 +25,7 @@ import io.cortavyn.model.api.ChatTextDelta;
 import io.cortavyn.model.api.StreamingChatModel;
 import io.cortavyn.model.api.ToolCall;
 import io.cortavyn.model.api.ToolDefinition;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
@@ -51,6 +52,7 @@ public final class DeepAgent implements AutoCloseable {
     private final DeepMemory memory;
     private final String memoryNamespace;
     private final List<DeepSkill> skills;
+    private final String agentInstructions;
     private final Map<String, DeepAgent> subagents;
     private final SubagentRegistry subagentRegistry;
     private final ApprovalPolicy approvalPolicy;
@@ -76,6 +78,7 @@ public final class DeepAgent implements AutoCloseable {
         memory = builder.memory;
         memoryNamespace = builder.memoryNamespace;
         skills = List.copyOf(builder.skills);
+        agentInstructions = builder.agentInstructions;
         Map<String, DeepAgent> configuredSubagents = new LinkedHashMap<>();
         for (DeepSubagent subagent : builder.subagents) {
             // A specialist gets a fresh agent/context. A configured parent workspace may be
@@ -121,6 +124,7 @@ public final class DeepAgent implements AutoCloseable {
         if (!systemPrompt.isBlank()) initial.add(new ChatMessage(ChatMessageRole.SYSTEM, systemPrompt));
         if (!loadedMemory.isBlank()) initial.add(new ChatMessage(ChatMessageRole.SYSTEM, "Persistent memory:\n" + loadedMemory));
         if (!skills.isEmpty()) initial.add(new ChatMessage(ChatMessageRole.SYSTEM, "Available skills (load their instructions when relevant):\n" + skills.stream().map(skill -> "- " + skill.name() + ": " + skill.description()).collect(java.util.stream.Collectors.joining("\n"))));
+        if (!agentInstructions.isBlank()) initial.add(new ChatMessage(ChatMessageRole.SYSTEM, agentInstructions));
         initial.add(new ChatMessage(ChatMessageRole.SYSTEM, "Use write_todos for multi-step work. Use the workspace tools for large intermediate results and verify changes."));
         initial.add(new ChatMessage(ChatMessageRole.USER, input));
         // The stream needs per-step events, so it drives the same loop directly. Invoke uses the
@@ -323,6 +327,7 @@ public final class DeepAgent implements AutoCloseable {
         private DeepMemory memory = DeepMemory.none();
         private String memoryNamespace = "default";
         private List<DeepSkill> skills = List.of();
+        private String agentInstructions = "";
         private List<DeepSubagent> subagents = List.of();
         private ApprovalPolicy approvalPolicy = ApprovalPolicy.writesAndExecute();
         private DeepRunStore runStore = DeepRunStore.inMemory();
@@ -341,6 +346,8 @@ public final class DeepAgent implements AutoCloseable {
         public Builder memory(DeepMemory value, String namespace) { memory = Objects.requireNonNull(value, "memory must not be null"); if (namespace == null || namespace.isBlank()) throw new IllegalArgumentException("memory namespace must not be blank"); memoryNamespace = namespace; return this; }
         /** Registers skills; only their metadata is placed in the starting context. */
         public Builder skills(DeepSkill... value) { skills = List.of(value); return this; }
+        /** Discovers SKILL.md catalogues and AGENTS.md repository instructions below a root. */
+        public Builder discoverSkills(Path root) { try { skills = SkillCatalog.load(root); agentInstructions = SkillCatalog.loadAgentInstructions(root); return this; } catch (java.io.IOException failure) { throw new IllegalArgumentException("could not discover agent skills", failure); } }
         /** Registers named specialists exposed through task, start_task, and await_task. */
         public Builder subagents(DeepSubagent... value) { subagents = List.of(value); return this; }
         /** Requires explicit review for configured tool calls; file writes are protected by default. */
