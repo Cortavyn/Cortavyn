@@ -9,6 +9,7 @@
         <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-graph</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-model-api</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>io.github.cortavyn</groupId><artifactId>cortavyn-chat</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>io.roastedroot</groupId><artifactId>quickjs4j</artifactId><version>${quickjs4j.version}</version></dependency>
         <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
     </dependencies>
 </project>
