@@ -40,6 +40,7 @@ import software.amazon.awssdk.services.bedrockruntime.model.ConverseStreamRespon
 import software.amazon.awssdk.services.bedrockruntime.model.InferenceConfiguration;
 import software.amazon.awssdk.services.bedrockruntime.model.Message;
 import software.amazon.awssdk.services.bedrockruntime.model.SystemContentBlock;
+import software.amazon.awssdk.services.bedrockruntime.model.CachePointType;
 
 /**
  * An AWS Bedrock Converse API adapter.
@@ -105,6 +106,7 @@ public final class BedrockChatModel implements ChatModel, StreamingChatModel, Au
                 case TOOL -> messages.add(Message.builder().role(ConversationRole.USER).content(ContentBlock.builder().toolResult(result -> result.toolUseId(message.toolCallId()).content(block -> block.text(message.content()))).build()).build());
             }
         }
+        if (!system.isEmpty() && Boolean.TRUE.equals(request.extensions().get("cortavyn.promptCache"))) system.add(SystemContentBlock.builder().cachePoint(point -> point.type(CachePointType.DEFAULT)).build());
         if (messages.isEmpty()) throw new IllegalArgumentException("Bedrock requires at least one non-system message");
         ConverseRequest.Builder builder = ConverseRequest.builder().modelId(modelId).messages(messages);
         if (!system.isEmpty()) builder.system(system);

@@ -62,6 +62,7 @@ public final class DeepAgent implements AutoCloseable {
     private final @org.jspecify.annotations.Nullable Sandbox sandbox;
     private final @org.jspecify.annotations.Nullable DeepInterpreter interpreter;
     private final DeepHarnessProfile harnessProfile;
+    private final PromptCachePolicy promptCachePolicy;
     // The plan is deliberately internal: it gives normal invoke/resume calls graph checkpoints
     // without requiring an application to construct a StateGraph itself.
     private final DeepAgentPlan plan;
@@ -97,6 +98,7 @@ public final class DeepAgent implements AutoCloseable {
         sandbox = builder.sandbox;
         interpreter = builder.interpreter;
         harnessProfile = builder.harnessProfile;
+        promptCachePolicy = builder.promptCachePolicy;
         subagentRegistry = new SubagentRegistry(builder.taskStore, (name, prompt) -> {
             DeepAgent subagent = subagents.get(name);
             if (subagent == null) return CompletableFuture.failedStage(new IllegalArgumentException("unknown subagent: " + name));
@@ -186,7 +188,7 @@ public final class DeepAgent implements AutoCloseable {
         ChatTool[] available = allTools(threadId); List<ToolDefinition> definitions = java.util.Arrays.stream(available).map(ChatTool::definition).toList();
         // Compact before every model turn: tool results can otherwise grow the conversation far
         // beyond a provider context window during long-running tasks.
-        return compactHistory(messages).thenCompose(activeMessages -> complete(new ChatRequest(activeMessages, definitions, ChatGenerationParameters.defaults(), Map.of()), events).thenCompose(response -> {
+        return compactHistory(messages).thenCompose(activeMessages -> complete(new ChatRequest(activeMessages, definitions, ChatGenerationParameters.defaults(), promptCachePolicy.enabled() ? Map.of("cortavyn.promptCache", true) : Map.of()), events).thenCompose(response -> {
             List<ChatMessage> updated = new ArrayList<>(activeMessages); updated.add(response.message()); events.accept(new DeepEvent.Message(response.message())); List<ToolCall> calls = response.message().toolCalls();
             if (calls.isEmpty()) return todoStore.read(threadId).thenApply(todos -> new DeepRun(threadId, new Conversation(threadId, updated), workspaceFor(threadId), todos, null));
             List<ToolCall> sensitive = calls.stream().filter(call -> approvalPolicy.requiresApproval(call.name())).toList();
@@ -340,6 +342,7 @@ public final class DeepAgent implements AutoCloseable {
         private DeepHarnessProfile harnessProfile = DeepHarnessProfile.defaults();
         private DeepTaskStore taskStore = DeepTaskStore.inMemory();
         private boolean generalPurposeSubagent = true;
+        private PromptCachePolicy promptCachePolicy = PromptCachePolicy.defaults();
         private Builder(ChatModel model) { this.model = Objects.requireNonNull(model, "model must not be null"); }
         public Builder tools(ChatTool... value) { tools = List.of(value); return this; }
         public Builder systemPrompt(String value) { systemPrompt = Objects.requireNonNull(value, "systemPrompt must not be null"); return this; }
@@ -369,6 +372,8 @@ public final class DeepAgent implements AutoCloseable {
         public Builder taskStore(DeepTaskStore value) { taskStore = Objects.requireNonNull(value, "taskStore must not be null"); return this; }
         /** Enables the default general-purpose delegated worker (enabled by default). */
         public Builder generalPurposeSubagent(boolean value) { generalPurposeSubagent = value; return this; }
+        /** Emits provider-specific cache markers for static system, memory, and skill context. */
+        public Builder promptCachePolicy(PromptCachePolicy value) { promptCachePolicy = Objects.requireNonNull(value, "promptCachePolicy must not be null"); return this; }
         public DeepAgent build() { return new DeepAgent(this); }
     }
 }
