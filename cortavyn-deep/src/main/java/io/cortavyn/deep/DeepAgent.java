@@ -18,6 +18,7 @@ import io.cortavyn.model.api.ChatModel;
 import io.cortavyn.model.api.ChatRequest;
 import io.cortavyn.model.api.ChatGenerationParameters;
 import io.cortavyn.model.api.ChatCompletion;
+import io.cortavyn.model.api.ChatContent;
 import io.cortavyn.model.api.ChatResponse;
 import io.cortavyn.model.api.ChatStreamEvent;
 import io.cortavyn.model.api.ChatTextDelta;
@@ -108,9 +109,9 @@ public final class DeepAgent implements AutoCloseable {
     public List<Checkpoint> history(String threadId) { return plan.graph().history(threadId); }
     public CompletionStage<DeepRun> invoke(String threadId, String input) {
         Objects.requireNonNull(input, "input must not be null");
-        return start(threadId, input, ignored -> { }, true);
+        return start(threadId, List.of(new io.cortavyn.model.api.TextContent(input)), ignored -> { }, true);
     }
-    private CompletionStage<DeepRun> start(String threadId, String input, Consumer<DeepEvent> events, boolean graphDriven) {
+    private CompletionStage<DeepRun> start(String threadId, List<ChatContent> input, Consumer<DeepEvent> events, boolean graphDriven) {
         return memory.load(memoryNamespace).thenCompose(loadedMemory -> {
         // Build the initial context once. Skill instructions are intentionally deferred; only
         // their catalogue metadata enters the prompt until the model calls load_skill.
@@ -125,7 +126,7 @@ public final class DeepAgent implements AutoCloseable {
         return graphDriven ? executeGraph(threadId, initial, 0) : run(threadId, initial, 0, events);
         });
     }
-    public CompletionStage<DeepRun> invoke(DeepRequest request) { return invoke(request.threadId(), request.input()); }
+    public CompletionStage<DeepRun> invoke(DeepRequest request) { return start(request.threadId(), request.input(), ignored -> { }, true); }
     /** Starts a cold run and emits progress plus a terminal completion, interrupt, or failure event. */
     public java.util.concurrent.Flow.Publisher<DeepEvent> stream(DeepRequest request) {
         return subscriber -> {

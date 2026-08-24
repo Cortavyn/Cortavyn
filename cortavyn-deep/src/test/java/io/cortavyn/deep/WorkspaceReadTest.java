@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.cortavyn.model.api.TextContent;
 import io.cortavyn.model.api.ToolCall;
+import io.cortavyn.model.api.ImageContent;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -35,5 +36,16 @@ class WorkspaceReadTest {
         assertEquals("2: two", window.content());
         assertEquals(java.util.List.of("path"), tool.definition().inputSchema().get("required"));
         assertEquals(true, window.metadata().get("truncated"));
+    }
+
+    @Test
+    void filesystemWorkspaceReturnsMediaAsPortableContent() throws Exception {
+        java.nio.file.Path directory = java.nio.file.Files.createTempDirectory("cortavyn-workspace-");
+        java.nio.file.Files.write(directory.resolve("diagram.png"), new byte[] {0});
+        WorkspaceRead read = new FilesystemWorkspace(directory).readFile("diagram.png", 0, 10).toCompletableFuture().join();
+
+        ImageContent image = (ImageContent) read.content().getFirst();
+        assertEquals("image/png", image.mediaType());
+        assertEquals("data", image.uri().getScheme());
     }
 }
