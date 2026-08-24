@@ -36,6 +36,17 @@ class QuickJsInterpreterTest {
     }
 
     @Test
+    void safelyFormatsStructuredAndNonSerializableResults() {
+        try (QuickJsInterpreter interpreter = new QuickJsInterpreter()) {
+            DeepInterpreterResult structured = interpreter.eval("thread", "({ answer: 42, nested: [true, 'ok'] })").toCompletableFuture().join();
+            assertEquals("{\"type\":\"object\",\"value\":{\"answer\":{\"type\":\"number\",\"value\":42},\"nested\":{\"type\":\"object\",\"value\":\"[object Array]\"}},\"truncated\":false}", structured.value());
+
+            DeepInterpreterResult function = interpreter.eval("thread", "() => 42").toCompletableFuture().join();
+            assertEquals("{\"type\":\"function\",\"value\":\"[object Function]\"}", function.value());
+        }
+    }
+
+    @Test
     void enforcesExecutionAndOutputLimits() {
         QuickJsInterpreterLimits limits = new QuickJsInterpreterLimits(Duration.ofMillis(10), 8L * 1024 * 1024, 320L * 1024, 8);
         try (QuickJsInterpreter interpreter = new QuickJsInterpreter(limits)) {

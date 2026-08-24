@@ -1,13 +1,8 @@
 package io.cortavyn.deep;
 
-import com.caoccao.qjs4j.core.JSBoolean;
 import com.caoccao.qjs4j.core.JSContext;
-import com.caoccao.qjs4j.core.JSNull;
-import com.caoccao.qjs4j.core.JSNumber;
 import com.caoccao.qjs4j.core.JSRuntime;
 import com.caoccao.qjs4j.core.JSRuntimeOptions;
-import com.caoccao.qjs4j.core.JSString;
-import com.caoccao.qjs4j.core.JSUndefined;
 import com.caoccao.qjs4j.core.JSValue;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -56,20 +51,12 @@ final class QuickJsSession implements AutoCloseable {
     }
 
     private String render(JSValue value) {
-        if (value instanceof JSUndefined) return "{\"type\":\"undefined\",\"value\":\"undefined\"}";
-        if (value instanceof JSNull) return "{\"type\":\"object\",\"value\":null}";
-        if (value instanceof JSBoolean || value instanceof JSNumber) {
-            return "{\"type\":\"" + value.type().name().toLowerCase() + "\",\"value\":" + value + "}";
+        context.getGlobalObject().set("__cortavynResult", value);
+        try {
+            return String.valueOf(context.eval("globalThis.__cortavynRender(globalThis.__cortavynResult)").toJavaObject());
+        } finally {
+            context.eval("globalThis.__cortavynResult = undefined;");
         }
-        if (value instanceof JSString string) {
-            return "{\"type\":\"string\",\"value\":" + quote(truncate(string.value())) + "}";
-        }
-        return "{\"type\":\"" + value.type().name().toLowerCase() + "\",\"value\":"
-                + quote("[" + value.getClass().getSimpleName() + "]") + "}";
-    }
-
-    private String truncate(String value) {
-        return value.length() <= limits.maxOutputCharacters() ? value : value.substring(0, limits.maxOutputCharacters()) + "…";
     }
 
     private static long deadline(Duration timeout) {
@@ -80,27 +67,6 @@ final class QuickJsSession implements AutoCloseable {
     private static String message(RuntimeException failure) {
         String message = failure.getMessage();
         return message == null || message.isBlank() ? failure.getClass().getSimpleName() : message;
-    }
-
-    private static String quote(String value) {
-        StringBuilder result = new StringBuilder(value.length() + 2).append('\"');
-        for (int index = 0; index < value.length(); index++) {
-            char character = value.charAt(index);
-            switch (character) {
-                case '\"' -> result.append("\\\"");
-                case '\\' -> result.append("\\\\");
-                case '\b' -> result.append("\\b");
-                case '\f' -> result.append("\\f");
-                case '\n' -> result.append("\\n");
-                case '\r' -> result.append("\\r");
-                case '\t' -> result.append("\\t");
-                default -> {
-                    if (character < 0x20) result.append("\\u%04x".formatted((int) character));
-                    else result.append(character);
-                }
-            }
-        }
-        return result.append('\"').toString();
     }
 
     @Override public void close() {
@@ -132,6 +98,38 @@ final class QuickJsSession implements AutoCloseable {
                   warn: (...values) => globalThis.__cortavynWrite("WARN", values),
                   error: (...values) => globalThis.__cortavynWrite("ERROR", values)
                 };
-                """.formatted(maxOutputCharacters);
+                Object.defineProperty(globalThis, "__cortavynRender", {
+                  configurable: false,
+                  writable: false,
+                  value: (() => {
+                    const maxEntries = 64;
+                    const maxString = %d;
+                    const objectToString = Object.prototype.toString;
+                    const clipped = value => value.length <= maxString ? value : value.slice(0, maxString) + "…";
+                    const tag = value => objectToString.call(value);
+                    const describe = (value, nested) => {
+                      const type = typeof value;
+                      if (type === "undefined") return { type, value: "undefined" };
+                      if (type === "string") return { type, value: clipped(value) };
+                      if (type === "number") return { type, value: Number.isFinite(value) ? value : null };
+                      if (type === "boolean") return { type, value };
+                      if (type === "bigint" || type === "symbol" || type === "function") return { type, value: tag(value) };
+                      if (value === null) return { type: "object", value: null };
+                      if (nested) return { type: "object", value: tag(value) };
+                      if (Array.isArray(value)) {
+                        const count = Math.min(value.length, maxEntries);
+                        const items = [];
+                        for (let index = 0; index < count; index++) items.push(describe(value[index], true));
+                        return { type: "object", value: items, truncated: value.length > count };
+                      }
+                      const keys = Object.keys(value);
+                      const result = {};
+                      for (const key of keys.slice(0, maxEntries)) result[key] = describe(value[key], true);
+                      return { type: "object", value: result, truncated: keys.length > maxEntries };
+                    };
+                    return value => JSON.stringify(describe(value, false));
+                  })()
+                });
+                """.formatted(maxOutputCharacters, Math.max(0, maxOutputCharacters - 512));
     }
 }

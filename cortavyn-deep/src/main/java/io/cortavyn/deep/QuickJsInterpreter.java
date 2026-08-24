@@ -33,7 +33,13 @@ public final class QuickJsInterpreter implements DeepInterpreter {
     @Override public CompletionStage<DeepInterpreterResult> eval(String threadId, String code) {
         Objects.requireNonNull(threadId, "threadId must not be null");
         Objects.requireNonNull(code, "code must not be null");
-        return CompletableFuture.supplyAsync(() -> sessions.computeIfAbsent(threadId, ignored -> new Session(limits)).eval(code), executor);
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return sessions.computeIfAbsent(threadId, ignored -> new Session(limits)).eval(code);
+            } catch (RuntimeException failure) {
+                return DeepInterpreterResult.failure("Could not start JavaScript worker: " + Session.message(failure), List.of());
+            }
+        }, executor);
     }
 
     @Override public void closeThread(String threadId) {
@@ -154,6 +160,11 @@ public final class QuickJsInterpreter implements DeepInterpreter {
             } catch (IOException ignored) {
                 return "the script may have exceeded its memory limit";
             }
+        }
+
+        private static String message(RuntimeException failure) {
+            String message = failure.getMessage();
+            return message == null || message.isBlank() ? failure.getClass().getSimpleName() : message;
         }
     }
 }
