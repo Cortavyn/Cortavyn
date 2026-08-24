@@ -236,7 +236,8 @@ public final class DeepAgent implements AutoCloseable {
     }
     private CompletionStage<List<ChatMessage>> compactHistory(List<ChatMessage> messages) {
         int characters = messages.stream().mapToInt(message -> message.content().length()).sum();
-        if (characters <= contextPolicy.historyCharacters()) return CompletableFuture.completedFuture(messages);
+        int tokens = messages.stream().mapToInt(DeepAgent::estimatedTokens).sum();
+        if (characters <= contextPolicy.historyCharacters() && tokens <= contextPolicy.effectiveHistoryTokens()) return CompletableFuture.completedFuture(messages);
         String history = messages.stream().map(message -> message.role() + ": " + message.content()).collect(java.util.stream.Collectors.joining("\n"));
         // The summary request deliberately exposes no tools: summarising must not mutate the
         // workspace or create another approval while context is being reduced.
@@ -262,13 +263,16 @@ public final class DeepAgent implements AutoCloseable {
         return todoStore.read(threadId).thenApply(todos -> { events.accept(new DeepEvent.TodosUpdated(todos)); return message; });
     }
     private ChatMessage compactToolResult(String threadId, ToolCall call, ToolExecutionResult result, Consumer<DeepEvent> events) {
-        if (result.content().length() <= contextPolicy.inlineToolResultCharacters()) return ChatMessage.toolResult(call.id(), result.contentBlocks(), result.error(), result.metadata());
+        if (result.content().length() <= contextPolicy.inlineToolResultCharacters() && estimatedTokens(result.content()) <= contextPolicy.inlineToolResultTokens()) return ChatMessage.toolResult(call.id(), result.contentBlocks(), result.error(), result.metadata());
         String path = "context/tool-results/" + call.id() + ".txt";
         // Keep the model context small while retaining the complete result for explicit reads.
         workspaceFor(threadId).write(path, result.content()).toCompletableFuture().join();
         events.accept(new DeepEvent.ContextOffloaded(path, result.content().length()));
-        return ChatMessage.toolResult(call.id(), "Large tool result offloaded to " + path + "; use read_file to inspect it.");
+        String preview = result.content().substring(0, Math.min(result.content().length(), contextPolicy.offloadPreviewCharacters()));
+        return ChatMessage.toolResult(call.id(), "Large tool result offloaded to " + path + "; preview:\n" + preview + (preview.length() < result.content().length() ? "\n[truncated; use read_file for the complete result]" : ""));
     }
+    private static int estimatedTokens(ChatMessage message) { return estimatedTokens(message.content()) + message.contentBlocks().stream().filter(block -> !(block instanceof io.cortavyn.model.api.TextContent)).mapToInt(ignored -> 256).sum(); }
+    private static int estimatedTokens(String text) { return Math.max(1, (text.length() + 3) / 4); }
     private DeepWorkspace workspaceFor(String threadId) { return configuredWorkspace == null ? threadWorkspaces.computeIfAbsent(threadId, ignored -> new InMemoryWorkspace()) : configuredWorkspace; }
     private CompletionStage<Optional<WorkspaceSnapshot>> snapshotWorkspace(String threadId) { DeepWorkspace workspace = workspaceFor(threadId); if (workspace instanceof CheckpointableWorkspace checkpointable) return checkpointable.snapshot().thenApply(Optional::of); return CompletableFuture.completedFuture(Optional.empty()); }
     private CompletionStage<Void> restoreWorkspace(String threadId, @org.jspecify.annotations.Nullable WorkspaceSnapshot snapshot) { if (snapshot == null) return CompletableFuture.completedFuture(null); DeepWorkspace workspace = workspaceFor(threadId); return workspace instanceof CheckpointableWorkspace checkpointable ? checkpointable.restore(snapshot) : CompletableFuture.failedStage(new IllegalStateException("workspace cannot restore a durable checkpoint")); }
