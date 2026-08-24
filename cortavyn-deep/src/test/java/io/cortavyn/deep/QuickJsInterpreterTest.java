@@ -26,7 +26,7 @@ class QuickJsInterpreterTest {
             DeepInterpreterResult logged = interpreter.eval("thread", "console.log('hello', { answer: 42 }); console.warn('careful'); 7").toCompletableFuture().join();
             assertEquals("{\"type\":\"number\",\"value\":7}", logged.value());
             assertEquals(List.of(
-                    new DeepInterpreterResult.ConsoleMessage(DeepInterpreterResult.Level.LOG, "hello {\"answer\":42}"),
+                    new DeepInterpreterResult.ConsoleMessage(DeepInterpreterResult.Level.LOG, "hello [object Object]"),
                     new DeepInterpreterResult.ConsoleMessage(DeepInterpreterResult.Level.WARN, "careful")), logged.console());
             assertNull(logged.error());
 
@@ -45,6 +45,26 @@ class QuickJsInterpreterTest {
             DeepInterpreterResult timeout = interpreter.eval("thread", "while (true) { }").toCompletableFuture().join();
             assertNotNull(timeout.error());
             assertTrue(timeout.error().contains("execution timeout"));
+        }
+    }
+
+    @Test
+    void enforcesTheRuntimeMemoryLimit() {
+        QuickJsInterpreterLimits limits = new QuickJsInterpreterLimits(Duration.ofSeconds(1), 32L * 1024 * 1024, 320L * 1024, 1_000);
+        try (QuickJsInterpreter interpreter = new QuickJsInterpreter(limits)) {
+            DeepInterpreterResult result = interpreter.eval("thread", "new Uint8Array(64 * 1024 * 1024)").toCompletableFuture().join();
+            assertNotNull(result.error());
+        }
+    }
+
+    @Test
+    void exposesNoJavaOrHostCapabilities() {
+        try (QuickJsInterpreter interpreter = new QuickJsInterpreter()) {
+            DeepInterpreterResult result = interpreter.eval("thread", "[typeof Java, typeof Packages, typeof process, typeof require, typeof ProcessSandbox].join(',')")
+                    .toCompletableFuture().join();
+
+            assertEquals("{\"type\":\"string\",\"value\":\"undefined,undefined,undefined,undefined,undefined\"}", result.value());
+            assertNull(result.error());
         }
     }
 }

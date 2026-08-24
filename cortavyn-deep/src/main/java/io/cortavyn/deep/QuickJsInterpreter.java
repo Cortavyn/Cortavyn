@@ -1,13 +1,15 @@
 package io.cortavyn.deep;
 
-import com.caoccao.qjs4j.core.JSContext;
 import com.caoccao.qjs4j.core.JSRuntime;
-import com.caoccao.qjs4j.core.JSRuntimeOptions;
-import com.caoccao.qjs4j.core.JSValue;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -47,116 +49,111 @@ public final class QuickJsInterpreter implements DeepInterpreter {
 
     private static final class Session implements AutoCloseable {
         private final QuickJsInterpreterLimits limits;
-        private final JSRuntime runtime;
-        private final JSContext context;
+        private final Process process;
+        private final BufferedWriter writer;
+        private final BufferedReader reader;
+        private final BufferedReader errorReader;
 
         private Session(QuickJsInterpreterLimits limits) {
             this.limits = limits;
-            runtime = new JSRuntime(new JSRuntimeOptions()
-                    .setMaxMemoryUsage(limits.maxMemoryBytes())
-                    .setMaxStackSize(limits.maxStackBytes()));
-            context = runtime.createContext();
-            context.eval(bootstrap(limits.maxOutputCharacters()));
+            try {
+                process = new ProcessBuilder(
+                        javaExecutable(),
+                        "-Xmx" + limits.maxMemoryBytes(),
+                        "-cp",
+                        workerClassPath(),
+                        QuickJsInterpreterWorker.class.getName(),
+                        Long.toString(limits.executionTimeout().toMillis()),
+                        Long.toString(limits.maxMemoryBytes()),
+                        Long.toString(limits.maxStackBytes()),
+                        Integer.toString(limits.maxOutputCharacters()))
+                        .start();
+                writer = process.outputWriter(StandardCharsets.UTF_8);
+                reader = process.inputReader(StandardCharsets.UTF_8);
+                errorReader = process.errorReader(StandardCharsets.UTF_8);
+            } catch (IOException failure) {
+                throw new IllegalStateException("Could not start the isolated JavaScript worker", failure);
+            }
         }
 
         private synchronized DeepInterpreterResult eval(String code) {
-            context.getVirtualMachine().setExecutionDeadline(deadline(limits.executionTimeout()));
-            context.eval("globalThis.__cortavynConsole = []; globalThis.__cortavynConsoleSize = 0;");
             try {
-                JSValue value = context.eval(code);
-                return DeepInterpreterResult.success(render(value), console());
-            } catch (RuntimeException failure) {
-                return DeepInterpreterResult.failure(message(failure), console());
-            } finally {
-                context.getVirtualMachine().setExecutionDeadline(0);
-            }
-        }
-
-        private String render(JSValue value) {
-            context.getGlobalObject().set("__cortavynResult", value);
-            try {
-                Object serialized = context.eval("""
-                        (() => {
-                          const value = globalThis.__cortavynResult;
-                          try {
-                            const serialized = JSON.stringify(value);
-                            return serialized === undefined
-                              ? JSON.stringify({ type: typeof value, value: String(value) })
-                              : JSON.stringify({ type: typeof value, value: JSON.parse(serialized) });
-                          } catch (_) {
-                            return JSON.stringify({ type: typeof value, value: Object.prototype.toString.call(value) });
-                          }
-                        })()
-                        """).toJavaObject();
-                return truncate(String.valueOf(serialized));
-            } finally {
-                context.eval("globalThis.__cortavynResult = undefined;");
-            }
-        }
-
-        private List<DeepInterpreterResult.ConsoleMessage> console() {
-            Object value = context.getGlobalObject().get("__cortavynConsole").toJavaObject();
-            if (!(value instanceof List<?> entries)) return List.of();
-            List<DeepInterpreterResult.ConsoleMessage> result = new ArrayList<>();
-            for (Object entry : entries) {
-                if (!(entry instanceof Map<?, ?> values)) continue;
-                try {
-                    DeepInterpreterResult.Level level = DeepInterpreterResult.Level.valueOf(String.valueOf(values.get("level")));
-                    result.add(new DeepInterpreterResult.ConsoleMessage(level, String.valueOf(values.get("text"))));
-                } catch (IllegalArgumentException ignored) {
-                    // Script code can mutate the capture array; malformed entries are not console output.
+                writer.write(encode(code));
+                writer.newLine();
+                writer.flush();
+                String value = read("result value");
+                String error = read("result error");
+                int consoleCount = Integer.parseInt(read("console size"));
+                List<DeepInterpreterResult.ConsoleMessage> console = new java.util.ArrayList<>(consoleCount);
+                for (int index = 0; index < consoleCount; index++) {
+                    String[] entry = read("console entry").split(" ", 2);
+                    console.add(new DeepInterpreterResult.ConsoleMessage(
+                            DeepInterpreterResult.Level.valueOf(entry[0]), decode(entry.length == 2 ? entry[1] : "")));
                 }
+                return error.equals("-")
+                        ? DeepInterpreterResult.success(decode(value), console)
+                        : DeepInterpreterResult.failure(decode(error), console);
+            } catch (IOException | IllegalArgumentException failure) {
+                return DeepInterpreterResult.failure(workerFailure(failure), List.of());
             }
-            return List.copyOf(result);
         }
 
-        private String truncate(String text) {
-            return text.length() <= limits.maxOutputCharacters() ? text : text.substring(0, limits.maxOutputCharacters()) + "…";
+        private String read(String part) throws IOException {
+            String line = reader.readLine();
+            if (line == null) throw new IOException("JavaScript worker terminated while reading " + part);
+            return line;
+        }
+
+        private String workerFailure(Exception failure) {
+            if (!process.isAlive()) {
+                return "JavaScript worker stopped (exit code " + process.exitValue() + "): " + errorOutput();
+            }
+            return "Could not read JavaScript worker result: " + failure.getMessage();
+        }
+
+        private static String javaExecutable() {
+            return Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        }
+
+        private static String workerClassPath() {
+            return classLocation(QuickJsInterpreter.class) + java.io.File.pathSeparator + classLocation(JSRuntime.class);
+        }
+
+        private static String classLocation(Class<?> type) {
+            try {
+                return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
+            } catch (URISyntaxException failure) {
+                throw new IllegalStateException("Could not resolve the JavaScript worker classpath", failure);
+            }
         }
 
         @Override public synchronized void close() {
-            context.close();
-            runtime.close();
-        }
-
-        private static long deadline(Duration timeout) {
             try {
-                return Math.addExact(System.currentTimeMillis(), timeout.toMillis());
-            } catch (ArithmeticException ignored) {
-                return Long.MAX_VALUE;
+                writer.close();
+                reader.close();
+                errorReader.close();
+            } catch (IOException ignored) {
+                // The process may already have been terminated by a resource limit.
             }
+            process.destroy();
+            if (process.isAlive()) process.destroyForcibly();
         }
 
-        private static String message(RuntimeException failure) {
-            String message = failure.getMessage();
-            return message == null || message.isBlank() ? failure.getClass().getSimpleName() : message;
+        private static String encode(String value) {
+            return Base64.getEncoder().encodeToString(value.getBytes(StandardCharsets.UTF_8));
         }
 
-        private static String bootstrap(int maxOutputCharacters) {
-            return """
-                    globalThis.__cortavynConsole = [];
-                    globalThis.__cortavynConsoleSize = 0;
-                    globalThis.__cortavynStringify = value => {
-                      try {
-                        if (typeof value === "string") return value;
-                        const serialized = JSON.stringify(value);
-                        return serialized === undefined ? String(value) : serialized;
-                      } catch (_) { return Object.prototype.toString.call(value); }
-                    };
-                    globalThis.__cortavynWrite = (level, values) => {
-                      const text = values.map(globalThis.__cortavynStringify).join(" ");
-                      const remaining = %d - globalThis.__cortavynConsoleSize;
-                      if (remaining <= 0) return;
-                      const clipped = text.slice(0, remaining);
-                      globalThis.__cortavynConsole.push({ level, text: clipped });
-                      globalThis.__cortavynConsoleSize += clipped.length;
-                    };
-                    globalThis.console = {
-                      log: (...values) => globalThis.__cortavynWrite("LOG", values),
-                      warn: (...values) => globalThis.__cortavynWrite("WARN", values),
-                      error: (...values) => globalThis.__cortavynWrite("ERROR", values)
-                    };
-                    """.formatted(maxOutputCharacters);
+        private static String decode(String value) {
+            return new String(Base64.getDecoder().decode(value), StandardCharsets.UTF_8);
+        }
+
+        private String errorOutput() {
+            try {
+                String error = errorReader.readLine();
+                return error == null || error.isBlank() ? "the script may have exceeded its memory limit" : error;
+            } catch (IOException ignored) {
+                return "the script may have exceeded its memory limit";
+            }
         }
     }
 }
