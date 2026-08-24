@@ -63,7 +63,7 @@ public final class DeepAgent implements AutoCloseable {
     private final @org.jspecify.annotations.Nullable DeepInterpreter interpreter;
     private final DeepHarnessProfile harnessProfile;
     private final PromptCachePolicy promptCachePolicy;
-    private final java.util.concurrent.SubmissionPublisher<DeepAgentChildStream> childStreams = new java.util.concurrent.SubmissionPublisher<>();
+    private final java.util.concurrent.SubmissionPublisher<DeepAgentChildStream> childStreams = new java.util.concurrent.SubmissionPublisher<>(Runnable::run, Flow.defaultBufferSize());
     // The plan is deliberately internal: it gives normal invoke/resume calls graph checkpoints
     // without requiring an application to construct a StateGraph itself.
     private final DeepAgentPlan plan;
@@ -326,7 +326,7 @@ public final class DeepAgent implements AutoCloseable {
     }
     private CompletionStage<String> streamSubagent(DeepAgent subagent, String name, String prompt) {
         String childId = "subagent-" + java.util.UUID.randomUUID();
-        java.util.concurrent.SubmissionPublisher<DeepEvent> events = new java.util.concurrent.SubmissionPublisher<>();
+        java.util.concurrent.SubmissionPublisher<DeepEvent> events = new java.util.concurrent.SubmissionPublisher<>(Runnable::run, Flow.defaultBufferSize());
         childStreams.submit(new DeepAgentChildStream(childId, name, events, subagent.childStreams()));
         CompletableFuture<String> result = new CompletableFuture<>();
         subagent.stream(new DeepRequest(childId, prompt)).subscribe(new Flow.Subscriber<>() {
