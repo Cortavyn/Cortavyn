@@ -63,6 +63,7 @@ public final class DeepAgent implements AutoCloseable {
     private final @org.jspecify.annotations.Nullable DeepInterpreter interpreter;
     private final DeepHarnessProfile harnessProfile;
     private final PromptCachePolicy promptCachePolicy;
+    private final java.util.concurrent.SubmissionPublisher<DeepAgentChildStream> childStreams = new java.util.concurrent.SubmissionPublisher<>();
     // The plan is deliberately internal: it gives normal invoke/resume calls graph checkpoints
     // without requiring an application to construct a StateGraph itself.
     private final DeepAgentPlan plan;
@@ -102,7 +103,7 @@ public final class DeepAgent implements AutoCloseable {
         subagentRegistry = new SubagentRegistry(builder.taskStore, (name, prompt) -> {
             DeepAgent subagent = subagents.get(name);
             if (subagent == null) return CompletableFuture.failedStage(new IllegalArgumentException("unknown subagent: " + name));
-            return subagent.invoke("subagent-" + java.util.UUID.randomUUID(), prompt).thenApply(run -> run.conversation().messages().getLast().content());
+            return streamSubagent(subagent, name, prompt);
         });
         // Only messages, the current loop counter and the last DeepRun cross the graph-node
         // boundary. Tool details remain in the conversation and the durable DeepPendingRun.
@@ -112,7 +113,9 @@ public final class DeepAgent implements AutoCloseable {
     }
     public static Builder builder(ChatModel model) { return new Builder(model); }
     /** Releases thread-scoped interpreter sessions and their runtime resources. */
-    @Override public void close() { if (interpreter != null) interpreter.close(); }
+    @Override public void close() { childStreams.close(); if (interpreter != null) interpreter.close(); }
+    /** Emits a lazy handle whenever this agent starts a delegated child run. */
+    public Flow.Publisher<DeepAgentChildStream> childStreams() { return childStreams; }
     /** Returns durable checkpoints created by this agent's internal graph for one thread. */
     public List<Checkpoint> history(String threadId) { return plan.graph().history(threadId); }
     public CompletionStage<DeepRun> invoke(String threadId, String input) {
@@ -320,6 +323,24 @@ public final class DeepAgent implements AutoCloseable {
         mcpSources.forEach(source -> result.addAll(source.tools()));
         if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.MCP_RESOURCES)) result.addAll(DeepTools.mcpResources(mcpSources));
         return result.toArray(ChatTool[]::new);
+    }
+    private CompletionStage<String> streamSubagent(DeepAgent subagent, String name, String prompt) {
+        String childId = "subagent-" + java.util.UUID.randomUUID();
+        java.util.concurrent.SubmissionPublisher<DeepEvent> events = new java.util.concurrent.SubmissionPublisher<>();
+        childStreams.submit(new DeepAgentChildStream(childId, name, events, subagent.childStreams()));
+        CompletableFuture<String> result = new CompletableFuture<>();
+        subagent.stream(new DeepRequest(childId, prompt)).subscribe(new Flow.Subscriber<>() {
+            @Override public void onSubscribe(Flow.Subscription subscription) { subscription.request(Long.MAX_VALUE); }
+            @Override public void onNext(DeepEvent event) {
+                events.submit(event);
+                if (event instanceof DeepEvent.Completed completed) result.complete(completed.run().conversation().messages().getLast().content());
+                else if (event instanceof DeepEvent.Interrupted interrupted) result.complete(interrupted.run().conversation().messages().getLast().content());
+                else if (event instanceof DeepEvent.Failed failed) result.completeExceptionally(failed.failure());
+            }
+            @Override public void onError(Throwable failure) { events.closeExceptionally(failure); result.completeExceptionally(failure); }
+            @Override public void onComplete() { events.close(); if (!result.isDone()) result.completeExceptionally(new IllegalStateException("child stream completed without a terminal event")); }
+        });
+        return result;
     }
     private void registerSpecialist(DynamicSpecialist specialist) { subagents.putIfAbsent(specialist.name(), DeepAgent.builder(model).systemPrompt(specialist.systemPrompt()).tools(tools.toArray(ChatTool[]::new)).contextPolicy(contextPolicy).approvalPolicy(approvalPolicy).generalPurposeSubagent(false).build()); }
     public static final class Builder {
