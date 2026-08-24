@@ -70,7 +70,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>5.13.4</junit.version>
         <jackson.version>2.18.3</jackson.version>
-        <quickjs4j.version>0.0.17</quickjs4j.version>
+        <qjs4j.version>0.1.1</qjs4j.version>
         <jspecify.version>1.0.0</jspecify.version>
         <maven.compiler.plugin.version>3.14.1</maven.compiler.plugin.version>
         <maven.enforcer.plugin.version>3.6.1</maven.enforcer.plugin.version>
