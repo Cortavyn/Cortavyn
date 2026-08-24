@@ -69,6 +69,7 @@ final class DeepTools {
                 ChatTool.typed("start_task", "Start a named specialist asynchronously and return its task id.", Task.class, args -> CompletableFuture.completedFuture(ToolExecutionResult.success(registry.start(args.agent(), args.prompt())))),
                 ChatTool.typed("await_task", "Wait for the final report of an asynchronous specialist task.", AwaitTask.class, args -> registry.await(args.taskId()).thenApply(ToolExecutionResult::success)));
     }
+    static ChatTool defineSpecialist(java.util.function.Consumer<DynamicSpecialist> registry) { return ChatTool.typed("define_specialist", "Define a named runtime specialist with an isolated system prompt.", DynamicSpecialist.class, specialist -> { registry.accept(specialist); return CompletableFuture.completedFuture(ToolExecutionResult.success("Specialist registered: " + specialist.name())); }); }
     record Ls(String path) { }
     record Read(String path, @Nullable Integer offset, @Nullable Integer limit) { }
     record Write(String path, String content) { }

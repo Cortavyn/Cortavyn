@@ -53,7 +53,7 @@ public final class DeepAgent implements AutoCloseable {
     private final String memoryNamespace;
     private final List<DeepSkill> skills;
     private final String agentInstructions;
-    private final Map<String, DeepAgent> subagents;
+    private final ConcurrentMap<String, DeepAgent> subagents;
     private final SubagentRegistry subagentRegistry;
     private final ApprovalPolicy approvalPolicy;
     private final DeepRunStore runStore;
@@ -79,16 +79,17 @@ public final class DeepAgent implements AutoCloseable {
         memoryNamespace = builder.memoryNamespace;
         skills = List.copyOf(builder.skills);
         agentInstructions = builder.agentInstructions;
-        Map<String, DeepAgent> configuredSubagents = new LinkedHashMap<>();
+        ConcurrentMap<String, DeepAgent> configuredSubagents = new ConcurrentHashMap<>();
         for (DeepSubagent subagent : builder.subagents) {
             // A specialist gets a fresh agent/context. A configured parent workspace may be
             // wrapped so a specialist can only see the paths delegated to it.
-            Builder child = DeepAgent.builder(model).systemPrompt(subagent.systemPrompt()).tools(subagent.tools().toArray(ChatTool[]::new)).contextPolicy(contextPolicy).approvalPolicy(subagent.approvalPolicy() == null ? builder.approvalPolicy : subagent.approvalPolicy());
+            Builder child = DeepAgent.builder(model).systemPrompt(subagent.systemPrompt()).tools(subagent.tools().toArray(ChatTool[]::new)).contextPolicy(contextPolicy).approvalPolicy(subagent.approvalPolicy() == null ? builder.approvalPolicy : subagent.approvalPolicy()).generalPurposeSubagent(false);
             if (builder.interpreter != null) child.interpreter(builder.interpreter);
             if (configuredWorkspace != null) child.workspace(subagent.workspacePermissions().isEmpty() ? configuredWorkspace : new PermissionedWorkspace(configuredWorkspace, subagent.workspacePermissions()));
             configuredSubagents.put(subagent.name(), child.build());
         }
-        subagents = Map.copyOf(configuredSubagents);
+        if (builder.generalPurposeSubagent) configuredSubagents.put("general-purpose", DeepAgent.builder(model).systemPrompt("You are a general-purpose delegated worker. Complete the assigned task and report concise findings.").tools(builder.tools.toArray(ChatTool[]::new)).contextPolicy(contextPolicy).approvalPolicy(builder.approvalPolicy).generalPurposeSubagent(false).build());
+        subagents = configuredSubagents;
         approvalPolicy = builder.approvalPolicy;
         runStore = builder.runStore;
         mcpSources = List.copyOf(builder.mcpSources);
@@ -313,11 +314,12 @@ public final class DeepAgent implements AutoCloseable {
         if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.MEMORY)) result.addAll(DeepTools.memory(memory, memoryNamespace));
         if (sandbox != null && harnessProfile.enables(DeepHarnessProfile.BuiltIn.SANDBOX)) result.addAll(DeepTools.sandbox(sandbox));
         if (interpreter != null && harnessProfile.enables(DeepHarnessProfile.BuiltIn.INTERPRETER)) result.add(DeepTools.interpreter(interpreter));
-        if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.SUBAGENTS)) result.addAll(DeepTools.subagents(!subagents.isEmpty(), subagentRegistry));
+        if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.SUBAGENTS)) { result.addAll(DeepTools.subagents(!subagents.isEmpty(), subagentRegistry)); result.add(DeepTools.defineSpecialist(this::registerSpecialist)); }
         mcpSources.forEach(source -> result.addAll(source.tools()));
         if (harnessProfile.enables(DeepHarnessProfile.BuiltIn.MCP_RESOURCES)) result.addAll(DeepTools.mcpResources(mcpSources));
         return result.toArray(ChatTool[]::new);
     }
+    private void registerSpecialist(DynamicSpecialist specialist) { subagents.putIfAbsent(specialist.name(), DeepAgent.builder(model).systemPrompt(specialist.systemPrompt()).tools(tools.toArray(ChatTool[]::new)).contextPolicy(contextPolicy).approvalPolicy(approvalPolicy).generalPurposeSubagent(false).build()); }
     public static final class Builder {
         private final ChatModel model;
         private List<ChatTool> tools = List.of();
@@ -337,6 +339,7 @@ public final class DeepAgent implements AutoCloseable {
         private @org.jspecify.annotations.Nullable DeepInterpreter interpreter;
         private DeepHarnessProfile harnessProfile = DeepHarnessProfile.defaults();
         private DeepTaskStore taskStore = DeepTaskStore.inMemory();
+        private boolean generalPurposeSubagent = true;
         private Builder(ChatModel model) { this.model = Objects.requireNonNull(model, "model must not be null"); }
         public Builder tools(ChatTool... value) { tools = List.of(value); return this; }
         public Builder systemPrompt(String value) { systemPrompt = Objects.requireNonNull(value, "systemPrompt must not be null"); return this; }
@@ -364,6 +367,8 @@ public final class DeepAgent implements AutoCloseable {
         /** Selects built-ins suitable for a concrete model/deployment. Application tools remain available. */
         public Builder harnessProfile(DeepHarnessProfile value) { harnessProfile = Objects.requireNonNull(value, "harnessProfile must not be null"); return this; }
         public Builder taskStore(DeepTaskStore value) { taskStore = Objects.requireNonNull(value, "taskStore must not be null"); return this; }
+        /** Enables the default general-purpose delegated worker (enabled by default). */
+        public Builder generalPurposeSubagent(boolean value) { generalPurposeSubagent = value; return this; }
         public DeepAgent build() { return new DeepAgent(this); }
     }
 }
