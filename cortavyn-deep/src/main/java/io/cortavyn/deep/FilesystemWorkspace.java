@@ -1,5 +1,6 @@
 package io.cortavyn.deep;
 
+import io.cortavyn.model.api.TextContent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,7 +12,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.regex.Pattern;
 
 /** Marker for a host-backed workspace root. Host implementations must reject paths escaping this root. */
-public final class FilesystemWorkspace implements DeepWorkspace {
+public final class FilesystemWorkspace implements DeepWorkspace, DeepWorkspaceFiles {
     private final Path root;
     public FilesystemWorkspace(Path root) { this.root = Objects.requireNonNull(root, "root must not be null").toAbsolutePath().normalize(); }
     public Path root() { return root; }
@@ -19,6 +20,13 @@ public final class FilesystemWorkspace implements DeepWorkspace {
     public Path resolve(String relativePath) { Path path = root.resolve(relativePath).normalize(); if (!path.startsWith(root)) throw new IllegalArgumentException("workspace path escapes root"); return path; }
     @Override public CompletionStage<List<WorkspaceEntry>> list(String path) { return supply(() -> { Path directory = resolve(path == null || path.isBlank() || ".".equals(path) ? "" : path); try (var entries = Files.list(directory)) { return entries.map(item -> { try { return new WorkspaceEntry(root.relativize(item).toString(), Files.isDirectory(item) ? 0 : Files.size(item), Files.getLastModifiedTime(item).toInstant()); } catch (IOException failure) { throw new IllegalStateException(failure); } }).sorted(java.util.Comparator.comparing(WorkspaceEntry::path)).toList(); } }); }
     @Override public CompletionStage<String> read(String path) { return supply(() -> Files.readString(resolve(path))); }
+    @Override public CompletionStage<WorkspaceRead> readFile(String path, int offset, int limit) { return supply(() -> {
+        if (offset < 0 || limit <= 0) throw new IllegalArgumentException("offset must be non-negative and limit must be positive");
+        Path target = resolve(path); String source = Files.readString(target); String[] lines = source.split("\\R", -1);
+        int end = (int) Math.min(lines.length, (long) offset + limit);
+        String text = java.util.stream.IntStream.range(offset, end).mapToObj(index -> (index + 1) + ": " + lines[index]).collect(java.util.stream.Collectors.joining("\n"));
+        return new WorkspaceRead(List.of(new TextContent(text)), offset, lines.length, end < lines.length, Files.size(target));
+    }); }
     @Override public CompletionStage<Void> write(String path, String content) { return run(() -> { Path target = resolve(path); Files.createDirectories(Objects.requireNonNull(target.getParent(), "workspace root cannot be a file")); Files.writeString(target, content); }); }
     @Override public CompletionStage<Boolean> edit(String path, String expected, String replacement, boolean all) { return supply(() -> { Path target = resolve(path); String source = Files.readString(target); if (!source.contains(expected)) return false; Files.writeString(target, all ? source.replace(expected, replacement) : source.replaceFirst(Pattern.quote(expected), java.util.regex.Matcher.quoteReplacement(replacement))); return true; }); }
     @Override public CompletionStage<List<String>> glob(String pattern) { return supply(() -> { PathMatcher matcher = new PathMatcher(pattern); try (var entries = Files.walk(root)) { return entries.filter(Files::isRegularFile).map(root::relativize).map(path -> path.toString().replace(path.getFileSystem().getSeparator(), "/")).filter(matcher::matches).sorted().toList(); } }); }

@@ -1,5 +1,6 @@
 package io.cortavyn.deep;
 
+import io.cortavyn.model.api.TextContent;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -11,10 +12,19 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /** Thread-safe, process-local workspace suited to tests and isolated agent runs. */
-public final class InMemoryWorkspace implements CheckpointableWorkspace {
+public final class InMemoryWorkspace implements CheckpointableWorkspace, DeepWorkspaceFiles {
     private final Map<String, File> files = new ConcurrentHashMap<>();
     @Override public CompletionStage<List<WorkspaceEntry>> list(String path) { String prefix = normalizeDirectory(path); return CompletableFuture.completedFuture(files.entrySet().stream().filter(entry -> entry.getKey().startsWith(prefix)).map(entry -> new WorkspaceEntry(entry.getKey(), entry.getValue().content().length(), entry.getValue().modifiedAt())).sorted(Comparator.comparing(WorkspaceEntry::path)).toList()); }
     @Override public CompletionStage<String> read(String path) { File file = files.get(normalize(path)); return file == null ? CompletableFuture.failedStage(new IllegalArgumentException("file not found: " + path)) : CompletableFuture.completedFuture(file.content()); }
+    @Override public CompletionStage<WorkspaceRead> readFile(String path, int offset, int limit) {
+        if (offset < 0 || limit <= 0) return CompletableFuture.failedStage(new IllegalArgumentException("offset must be non-negative and limit must be positive"));
+        File file = files.get(normalize(path));
+        if (file == null) return CompletableFuture.failedStage(new IllegalArgumentException("file not found: " + path));
+        String[] lines = file.content().split("\\R", -1);
+        int end = (int) Math.min(lines.length, (long) offset + limit);
+        String text = java.util.stream.IntStream.range(offset, end).mapToObj(index -> (index + 1) + ": " + lines[index]).collect(java.util.stream.Collectors.joining("\n"));
+        return CompletableFuture.completedFuture(new WorkspaceRead(List.of(new TextContent(text)), offset, lines.length, end < lines.length, file.content().length()));
+    }
     @Override public CompletionStage<Void> write(String path, String content) { files.put(normalize(path), new File(content, Instant.now())); return CompletableFuture.completedFuture(null); }
     @Override public CompletionStage<Boolean> edit(String path, String expected, String replacement, boolean all) { String key = normalize(path); File file = files.get(key); if (file == null || !file.content().contains(expected)) return CompletableFuture.completedFuture(false); String next = all ? file.content().replace(expected, replacement) : file.content().replaceFirst(Pattern.quote(expected), java.util.regex.Matcher.quoteReplacement(replacement)); files.put(key, new File(next, Instant.now())); return CompletableFuture.completedFuture(true); }
     @Override public CompletionStage<List<String>> glob(String pattern) { Pattern regex = Pattern.compile(globRegex(pattern)); return CompletableFuture.completedFuture(files.keySet().stream().filter(path -> regex.matcher(path).matches()).sorted().toList()); }

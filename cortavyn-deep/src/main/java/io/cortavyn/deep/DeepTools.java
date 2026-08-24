@@ -5,6 +5,7 @@ import io.cortavyn.chat.ToolExecutionResult;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import org.jspecify.annotations.Nullable;
 
 /** Built-in, provider-neutral tools exposed by a {@link DeepAgent}. */
 final class DeepTools {
@@ -12,11 +13,21 @@ final class DeepTools {
     static List<ChatTool> workspace(DeepWorkspace workspace) {
         return List.of(
                 ChatTool.typed("ls", "List files below a workspace directory.", Ls.class, args -> workspace.list(args.path()).thenApply(value -> ToolExecutionResult.success(value.toString()))),
-                ChatTool.typed("read_file", "Read a text file from the workspace.", Read.class, args -> workspace.read(args.path()).thenApply(ToolExecutionResult::success)),
+                ChatTool.typed("read_file", "Read a workspace file. Optional offset and limit select a zero-based text-line window.", Read.class, args -> readWorkspaceFile(workspace, args)),
                 ChatTool.typed("write_file", "Write a text file in the workspace.", Write.class, args -> workspace.write(args.path(), args.content()).thenApply(ignored -> ToolExecutionResult.success("Wrote " + args.path()))),
                 ChatTool.typed("edit_file", "Replace exact text in a workspace file.", Edit.class, args -> workspace.edit(args.path(), args.expected(), args.replacement(), args.all()).thenApply(changed -> ToolExecutionResult.success(changed ? "Edit applied" : "Expected text not found"))),
                 ChatTool.typed("glob", "Find workspace files using a glob pattern.", Glob.class, args -> workspace.glob(args.pattern()).thenApply(value -> ToolExecutionResult.success(value.toString()))),
                 ChatTool.typed("grep", "Find text in workspace files.", Grep.class, args -> workspace.grep(args.query(), args.pattern()).thenApply(value -> ToolExecutionResult.success(value.toString()))));
+    }
+    private static java.util.concurrent.CompletionStage<ToolExecutionResult> readWorkspaceFile(DeepWorkspace workspace, Read args) {
+        if (args.offset() == null && args.limit() == null) return workspace.read(args.path()).thenApply(ToolExecutionResult::success);
+        if (!(workspace instanceof DeepWorkspaceFiles files)) {
+            return CompletableFuture.completedFuture(ToolExecutionResult.failure("This workspace does not support bounded file reads."));
+        }
+        int offset = args.offset() == null ? 0 : args.offset();
+        int limit = args.limit() == null ? 200 : args.limit();
+        return files.readFile(args.path(), offset, limit).thenApply(read -> ToolExecutionResult.success(read.content()).withMetadata(Map.of(
+                "offset", read.offset(), "lineCount", read.lineCount(), "truncated", read.truncated(), "size", read.size())));
     }
     static ChatTool todos(DeepTodoStore store) { return ChatTool.typed("write_todos", "Record a structured plan with pending, in-progress, or completed work.", Todos.class, (args, runtime) -> store.replace(runtime.runId(), args.todos()).thenApply(ignored -> ToolExecutionResult.success("Todos recorded: " + args.todos().size()))); }
     static List<ChatTool> skills(List<DeepSkill> skills) {
@@ -59,7 +70,7 @@ final class DeepTools {
                 ChatTool.typed("await_task", "Wait for the final report of an asynchronous specialist task.", AwaitTask.class, args -> registry.await(args.taskId()).thenApply(ToolExecutionResult::success)));
     }
     record Ls(String path) { }
-    record Read(String path) { }
+    record Read(String path, @Nullable Integer offset, @Nullable Integer limit) { }
     record Write(String path, String content) { }
     record Edit(String path, String expected, String replacement, boolean all) { }
     record Glob(String pattern) { }
