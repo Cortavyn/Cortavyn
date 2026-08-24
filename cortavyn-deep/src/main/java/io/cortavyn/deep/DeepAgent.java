@@ -191,7 +191,7 @@ public final class DeepAgent implements AutoCloseable {
         ChatTool[] available = allTools(threadId); List<ToolDefinition> definitions = java.util.Arrays.stream(available).map(ChatTool::definition).toList();
         // Compact before every model turn: tool results can otherwise grow the conversation far
         // beyond a provider context window during long-running tasks.
-        return compactHistory(messages).thenCompose(activeMessages -> complete(new ChatRequest(activeMessages, definitions, ChatGenerationParameters.defaults(), promptCachePolicy.enabled() ? Map.of("cortavyn.promptCache", true) : Map.of()), events).thenCompose(response -> {
+        return compactHistory(messages).thenCompose(activeMessages -> completeWithContextFallback(activeMessages, definitions, events).thenCompose(response -> {
             List<ChatMessage> updated = new ArrayList<>(activeMessages); updated.add(response.message()); events.accept(new DeepEvent.Message(response.message())); List<ToolCall> calls = response.message().toolCalls();
             if (calls.isEmpty()) return todoStore.read(threadId).thenApply(todos -> new DeepRun(threadId, new Conversation(threadId, updated), workspaceFor(threadId), todos, null));
             List<ToolCall> sensitive = calls.stream().filter(call -> approvalPolicy.requiresApproval(call.name())).toList();
@@ -230,6 +230,18 @@ public final class DeepAgent implements AutoCloseable {
         });
         return response;
     }
+    private CompletionStage<ChatResponse> completeWithContextFallback(List<ChatMessage> messages, List<ToolDefinition> definitions, Consumer<DeepEvent> events) {
+        ChatRequest request = new ChatRequest(messages, definitions, ChatGenerationParameters.defaults(), promptCachePolicy.enabled() ? Map.of("cortavyn.promptCache", true) : Map.of());
+        CompletableFuture<ChatResponse> result = new CompletableFuture<>();
+        complete(request, events).whenComplete((response, failure) -> {
+            if (failure == null) { result.complete(response); return; }
+            if (!isContextOverflow(failure)) { result.completeExceptionally(failure); return; }
+            summarizeHistory(messages).thenCompose(summary -> complete(new ChatRequest(summary, definitions, ChatGenerationParameters.defaults(), promptCachePolicy.enabled() ? Map.of("cortavyn.promptCache", true) : Map.of()), events)).whenComplete((fallback, fallbackFailure) -> {
+                if (fallbackFailure == null) result.complete(fallback); else result.completeExceptionally(fallbackFailure);
+            });
+        });
+        return result;
+    }
     private java.util.concurrent.CompletionStage<? extends io.cortavyn.graph.NodeResult> executeGraphNode(GraphState state, io.cortavyn.graph.NodeRuntime runtime) {
         @SuppressWarnings("unchecked") List<ChatMessage> messages = state.get(GRAPH_MESSAGES, List.class);
         int iteration = state.get(GRAPH_ITERATION, Integer.class);
@@ -250,12 +262,16 @@ public final class DeepAgent implements AutoCloseable {
         int characters = messages.stream().mapToInt(message -> message.content().length()).sum();
         int tokens = messages.stream().mapToInt(DeepAgent::estimatedTokens).sum();
         if (characters <= contextPolicy.historyCharacters() && tokens <= contextPolicy.effectiveHistoryTokens()) return CompletableFuture.completedFuture(messages);
+        return summarizeHistory(messages);
+    }
+    private CompletionStage<List<ChatMessage>> summarizeHistory(List<ChatMessage> messages) {
         String history = messages.stream().map(message -> message.role() + ": " + message.content()).collect(java.util.stream.Collectors.joining("\n"));
         // The summary request deliberately exposes no tools: summarising must not mutate the
         // workspace or create another approval while context is being reduced.
         ChatMessage request = new ChatMessage(ChatMessageRole.USER, "Summarize this agent history faithfully. Preserve goals, completed work, pending work, approvals, file paths and tool findings:\n" + history);
         return model.complete(new ChatRequest(List.of(request), List.of(), ChatGenerationParameters.defaults(), Map.of())).thenApply(response -> List.of(new ChatMessage(ChatMessageRole.SYSTEM, "Conversation summary:\n" + response.message().content())));
     }
+    private static boolean isContextOverflow(Throwable failure) { Throwable current = failure; while (current != null) { String message = current.getMessage(); if (message != null) { String normalized = message.toLowerCase(java.util.Locale.ROOT); if (normalized.contains("context") && (normalized.contains("overflow") || normalized.contains("length") || normalized.contains("window"))) return true; } current = current.getCause(); } return false; }
     private CompletionStage<ChatMessage> resolve(String threadId, ToolCall call, ApprovalDecision decision, Consumer<DeepEvent> events) {
         if (!approvalPolicy.decisionsFor(call.name()).contains(decision.type())) return CompletableFuture.completedFuture(ChatMessage.toolResult(call.id(), "Approval decision is not allowed for tool: " + call.name()));
         return switch (decision.type()) { case APPROVE -> execute(threadId, call, events); case EDIT -> { if (decision.arguments() == null) yield CompletableFuture.completedFuture(ChatMessage.toolResult(call.id(), "Approval edit missing arguments")); ToolCall edited = new ToolCall(call.id(), call.name(), decision.arguments()); // Do not let an edited payload bypass the tool's public schema.
