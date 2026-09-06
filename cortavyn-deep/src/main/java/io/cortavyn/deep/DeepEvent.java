@@ -5,7 +5,9 @@ import io.cortavyn.model.api.ToolCall;
 import java.util.List;
 
 /** Typed progress and terminal events emitted by a streamed deep-agent invocation. */
-public sealed interface DeepEvent permits DeepEvent.Message, DeepEvent.ToolCallRequested, DeepEvent.ToolResult, DeepEvent.TodosUpdated, DeepEvent.ContextOffloaded, DeepEvent.SubagentStarted, DeepEvent.SubagentCompleted, DeepEvent.ApprovalRequested, DeepEvent.Completed, DeepEvent.Interrupted, DeepEvent.Failed {
+public sealed interface DeepEvent permits DeepEvent.TextDelta, DeepEvent.Message, DeepEvent.ToolCallRequested, DeepEvent.ToolResult, DeepEvent.TodosUpdated, DeepEvent.ContextOffloaded, DeepEvent.SubagentStarted, DeepEvent.SubagentCompleted, DeepEvent.ApprovalRequested, DeepEvent.Completed, DeepEvent.Interrupted, DeepEvent.Failed {
+    /** Incremental assistant text from a streaming model turn. */
+    record TextDelta(String text) implements DeepEvent { }
     record Message(ChatMessage message) implements DeepEvent { }
     record ToolCallRequested(ToolCall call) implements DeepEvent { }
     record ToolResult(ToolCall call, ChatMessage message) implements DeepEvent { }
