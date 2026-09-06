@@ -5,6 +5,7 @@ import io.cortavyn.chat.ToolExecutionResult;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import org.jspecify.annotations.Nullable;
 
 /** Built-in, provider-neutral tools exposed by a {@link DeepAgent}. */
 final class DeepTools {
@@ -12,11 +13,21 @@ final class DeepTools {
     static List<ChatTool> workspace(DeepWorkspace workspace) {
         return List.of(
                 ChatTool.typed("ls", "List files below a workspace directory.", Ls.class, args -> workspace.list(args.path()).thenApply(value -> ToolExecutionResult.success(value.toString()))),
-                ChatTool.typed("read_file", "Read a text file from the workspace.", Read.class, args -> workspace.read(args.path()).thenApply(ToolExecutionResult::success)),
+                ChatTool.typed("read_file", "Read a workspace file. Optional offset and limit select a zero-based text-line window.", Read.class, args -> readWorkspaceFile(workspace, args)),
                 ChatTool.typed("write_file", "Write a text file in the workspace.", Write.class, args -> workspace.write(args.path(), args.content()).thenApply(ignored -> ToolExecutionResult.success("Wrote " + args.path()))),
                 ChatTool.typed("edit_file", "Replace exact text in a workspace file.", Edit.class, args -> workspace.edit(args.path(), args.expected(), args.replacement(), args.all()).thenApply(changed -> ToolExecutionResult.success(changed ? "Edit applied" : "Expected text not found"))),
                 ChatTool.typed("glob", "Find workspace files using a glob pattern.", Glob.class, args -> workspace.glob(args.pattern()).thenApply(value -> ToolExecutionResult.success(value.toString()))),
                 ChatTool.typed("grep", "Find text in workspace files.", Grep.class, args -> workspace.grep(args.query(), args.pattern()).thenApply(value -> ToolExecutionResult.success(value.toString()))));
+    }
+    private static java.util.concurrent.CompletionStage<ToolExecutionResult> readWorkspaceFile(DeepWorkspace workspace, Read args) {
+        if (args.offset() == null && args.limit() == null) return workspace.read(args.path()).thenApply(ToolExecutionResult::success);
+        if (!(workspace instanceof DeepWorkspaceFiles files)) {
+            return CompletableFuture.completedFuture(ToolExecutionResult.failure("This workspace does not support bounded file reads."));
+        }
+        int offset = args.offset() == null ? 0 : args.offset();
+        int limit = args.limit() == null ? 200 : args.limit();
+        return files.readFile(args.path(), offset, limit).thenApply(read -> ToolExecutionResult.success(read.content()).withMetadata(Map.of(
+                "offset", read.offset(), "lineCount", read.lineCount(), "truncated", read.truncated(), "size", read.size())));
     }
     static ChatTool todos(DeepTodoStore store) { return ChatTool.typed("write_todos", "Record a structured plan with pending, in-progress, or completed work.", Todos.class, (args, runtime) -> store.replace(runtime.runId(), args.todos()).thenApply(ignored -> ToolExecutionResult.success("Todos recorded: " + args.todos().size()))); }
     static List<ChatTool> skills(List<DeepSkill> skills) {
@@ -33,6 +44,16 @@ final class DeepTools {
                 ChatTool.typed("read_memory", "Read persistent caller-scoped agent memory.", ReadMemory.class, ignored -> memory.load(namespace).thenApply(ToolExecutionResult::success)),
                 ChatTool.typed("write_memory", "Replace persistent caller-scoped agent memory with reviewed instructions or preferences.", WriteMemory.class, args -> memory.save(namespace, args.content()).thenApply(ignored -> ToolExecutionResult.success("Memory updated."))));
     }
+    static ChatTool interpreter(DeepInterpreter interpreter) {
+        return ChatTool.typed("eval", "Evaluate isolated JavaScript with no shell, network, filesystem, or Java host access.", Eval.class,
+                (args, runtime) -> interpreter.eval(runtime.runId(), args.code()).thenApply(DeepTools::interpreterResult));
+    }
+    private static ToolExecutionResult interpreterResult(DeepInterpreterResult result) {
+        StringBuilder content = new StringBuilder();
+        result.console().forEach(entry -> content.append(entry.level().name().toLowerCase(java.util.Locale.ROOT)).append(": ").append(entry.text()).append('\n'));
+        if (result.error() != null) return ToolExecutionResult.failure(content.append("JavaScript failed: ").append(result.error()).toString());
+        return ToolExecutionResult.success(content.append("Result: ").append(result.value()).toString());
+    }
     static List<ChatTool> sandbox(Sandbox sandbox) { return List.of(ChatTool.typed("execute", "Execute an argument-vector command in the configured sandbox.", Execute.class, args -> sandbox.execute(args.command(), java.time.Duration.ofSeconds(args.timeoutSeconds())).thenApply(result -> ToolExecutionResult.success("exit=" + result.exitCode() + "\nstdout:\n" + result.stdout() + "\nstderr:\n" + result.stderr())))); }
     static List<ChatTool> mcpResources(List<McpToolSource> sources) {
         if (sources.isEmpty()) return List.of();
@@ -48,8 +69,9 @@ final class DeepTools {
                 ChatTool.typed("start_task", "Start a named specialist asynchronously and return its task id.", Task.class, args -> CompletableFuture.completedFuture(ToolExecutionResult.success(registry.start(args.agent(), args.prompt())))),
                 ChatTool.typed("await_task", "Wait for the final report of an asynchronous specialist task.", AwaitTask.class, args -> registry.await(args.taskId()).thenApply(ToolExecutionResult::success)));
     }
+    static ChatTool defineSpecialist(java.util.function.Consumer<DynamicSpecialist> registry) { return ChatTool.typed("define_specialist", "Define a named runtime specialist with an isolated system prompt.", DynamicSpecialist.class, specialist -> { registry.accept(specialist); return CompletableFuture.completedFuture(ToolExecutionResult.success("Specialist registered: " + specialist.name())); }); }
     record Ls(String path) { }
-    record Read(String path) { }
+    record Read(String path, @Nullable Integer offset, @Nullable Integer limit) { }
     record Write(String path, String content) { }
     record Edit(String path, String expected, String replacement, boolean all) { }
     record Glob(String pattern) { }
@@ -62,5 +84,6 @@ final class DeepTools {
     record ReadMemory() { }
     record WriteMemory(String content) { }
     record Execute(List<String> command, long timeoutSeconds) { public Execute { if (timeoutSeconds <= 0) throw new IllegalArgumentException("timeoutSeconds must be positive"); } }
+    record Eval(String code) { }
     record ReadMcpResource(String source, String path) { }
 }

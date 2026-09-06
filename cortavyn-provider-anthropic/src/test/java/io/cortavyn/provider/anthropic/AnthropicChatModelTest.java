@@ -40,4 +40,10 @@ class AnthropicChatModelTest {
         assertEquals(true, payload.contains("\"type\":\"image\",\"source\":{\"type\":\"base64\",\"media_type\":\"image/png\",\"data\":\"aGVsbG8=\"}"));
         assertEquals(true, payload.contains("\"type\":\"document\""));
     }
+
+    @Test void marksStaticSystemContextForPromptCaching() {
+        var model = AnthropicChatModel.builder().apiKey("key").build();
+        String payload = model.toRequestJson(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.SYSTEM, "Static"), new ChatMessage(ChatMessageRole.USER, "Hello")), List.of(), io.cortavyn.model.api.ChatGenerationParameters.defaults(), Map.of("cortavyn.promptCache", true)));
+        assertEquals(true, payload.contains("\"cache_control\":{\"type\":\"ephemeral\"}"));
+    }
 }

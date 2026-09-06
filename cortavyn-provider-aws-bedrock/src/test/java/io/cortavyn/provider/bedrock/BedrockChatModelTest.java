@@ -40,4 +40,12 @@ class BedrockChatModelTest {
             assertEquals("report.pdf", request.messages().getFirst().content().get(1).document().name());
         }
     }
+
+    @Test
+    void marksStaticSystemContextForPromptCaching() {
+        try (BedrockChatModel model = BedrockChatModel.builder().region(Region.US_EAST_1).modelId("anthropic.claude-test").build()) {
+            var request = model.toConverseRequest(new ChatRequest(List.of(new ChatMessage(ChatMessageRole.SYSTEM, "Static"), new ChatMessage(ChatMessageRole.USER, "Hello")), List.of(), io.cortavyn.model.api.ChatGenerationParameters.defaults(), java.util.Map.of("cortavyn.promptCache", true)));
+            assertEquals("default", request.system().getLast().cachePoint().typeAsString());
+        }
+    }
 }

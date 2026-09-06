@@ -27,6 +27,16 @@ public final class SkillCatalog {
         }
         return List.copyOf(skills);
     }
+    /** Loads repository-level agent instructions, including nested directory guidance. */
+    public static String loadAgentInstructions(Path root) throws IOException {
+        if (!Files.isDirectory(root)) return "";
+        try (var paths = Files.walk(root)) {
+            return paths.filter(path -> path.getFileName().toString().equals("AGENTS.md")).sorted().map(path -> {
+                try { return "Instructions from " + root.relativize(path) + ":\n" + Files.readString(path); }
+                catch (IOException failure) { throw new java.io.UncheckedIOException(failure); }
+            }).collect(java.util.stream.Collectors.joining("\n\n"));
+        } catch (java.io.UncheckedIOException failure) { throw failure.getCause(); }
+    }
     public static DeepSkill parse(String markdown) {
         String[] sections = markdown.split("---", 3);
         if (sections.length < 3 || !sections[0].isBlank()) throw new IllegalArgumentException("SKILL.md requires YAML frontmatter");

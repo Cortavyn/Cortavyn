@@ -1,17 +1,23 @@
 package io.cortavyn.deep;
 
+import io.cortavyn.model.api.AudioContent;
+import io.cortavyn.model.api.ChatContent;
+import io.cortavyn.model.api.DocumentContent;
+import io.cortavyn.model.api.ImageContent;
+import io.cortavyn.model.api.TextContent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.Base64;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.regex.Pattern;
 
 /** Marker for a host-backed workspace root. Host implementations must reject paths escaping this root. */
-public final class FilesystemWorkspace implements DeepWorkspace {
+public final class FilesystemWorkspace implements DeepWorkspace, DeepWorkspaceFiles {
     private final Path root;
     public FilesystemWorkspace(Path root) { this.root = Objects.requireNonNull(root, "root must not be null").toAbsolutePath().normalize(); }
     public Path root() { return root; }
@@ -19,6 +25,47 @@ public final class FilesystemWorkspace implements DeepWorkspace {
     public Path resolve(String relativePath) { Path path = root.resolve(relativePath).normalize(); if (!path.startsWith(root)) throw new IllegalArgumentException("workspace path escapes root"); return path; }
     @Override public CompletionStage<List<WorkspaceEntry>> list(String path) { return supply(() -> { Path directory = resolve(path == null || path.isBlank() || ".".equals(path) ? "" : path); try (var entries = Files.list(directory)) { return entries.map(item -> { try { return new WorkspaceEntry(root.relativize(item).toString(), Files.isDirectory(item) ? 0 : Files.size(item), Files.getLastModifiedTime(item).toInstant()); } catch (IOException failure) { throw new IllegalStateException(failure); } }).sorted(java.util.Comparator.comparing(WorkspaceEntry::path)).toList(); } }); }
     @Override public CompletionStage<String> read(String path) { return supply(() -> Files.readString(resolve(path))); }
+    @Override public CompletionStage<WorkspaceRead> readFile(String path, int offset, int limit) { return supply(() -> {
+        if (offset < 0 || limit <= 0) throw new IllegalArgumentException("offset must be non-negative and limit must be positive");
+        Path target = resolve(path);
+        String mediaType = mediaType(target);
+        if (!isText(mediaType, target)) {
+            ChatContent content = mediaContent(target, mediaType == null ? "application/octet-stream" : mediaType);
+            return new WorkspaceRead(List.of(content), 0, 0, false, Files.size(target));
+        }
+        String source = Files.readString(target); String[] lines = source.split("\\R", -1);
+        int end = (int) Math.min(lines.length, (long) offset + limit);
+        String text = java.util.stream.IntStream.range(offset, end).mapToObj(index -> (index + 1) + ": " + lines[index]).collect(java.util.stream.Collectors.joining("\n"));
+        return new WorkspaceRead(List.of(new TextContent(text)), offset, lines.length, end < lines.length, Files.size(target));
+    }); }
+    private static boolean isText(String mediaType, Path path) {
+        if (mediaType != null && (mediaType.startsWith("text/") || mediaType.equals("application/json") || mediaType.endsWith("+json") || mediaType.equals("application/xml") || mediaType.endsWith("+xml"))) return true;
+        String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        return name.endsWith(".md") || name.endsWith(".csv") || name.endsWith(".yaml") || name.endsWith(".yml") || name.endsWith(".java") || name.endsWith(".js") || name.endsWith(".ts") || name.endsWith(".py") || name.endsWith(".xml") || name.endsWith(".html") || name.endsWith(".css");
+    }
+    private static String mediaType(Path target) throws IOException {
+        String detected = Files.probeContentType(target);
+        if (detected != null && !detected.equals("application/octet-stream")) return detected;
+        String name = target.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        if (name.endsWith(".gif")) return "image/gif";
+        if (name.endsWith(".webp")) return "image/webp";
+        if (name.endsWith(".mp3")) return "audio/mpeg";
+        if (name.endsWith(".wav")) return "audio/wav";
+        if (name.endsWith(".mp4")) return "video/mp4";
+        if (name.endsWith(".webm")) return "video/webm";
+        if (name.endsWith(".pdf")) return "application/pdf";
+        if (name.endsWith(".ppt")) return "application/vnd.ms-powerpoint";
+        if (name.endsWith(".pptx")) return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+        return detected == null ? "application/octet-stream" : detected;
+    }
+    private static ChatContent mediaContent(Path target, String mediaType) throws IOException {
+        java.net.URI data = java.net.URI.create("data:" + mediaType + ";base64," + Base64.getEncoder().encodeToString(Files.readAllBytes(target)));
+        if (mediaType.startsWith("image/")) return new ImageContent(data, mediaType);
+        if (mediaType.startsWith("audio/")) return new AudioContent(data, mediaType);
+        return new DocumentContent(data, mediaType, target.getFileName().toString());
+    }
     @Override public CompletionStage<Void> write(String path, String content) { return run(() -> { Path target = resolve(path); Files.createDirectories(Objects.requireNonNull(target.getParent(), "workspace root cannot be a file")); Files.writeString(target, content); }); }
     @Override public CompletionStage<Boolean> edit(String path, String expected, String replacement, boolean all) { return supply(() -> { Path target = resolve(path); String source = Files.readString(target); if (!source.contains(expected)) return false; Files.writeString(target, all ? source.replace(expected, replacement) : source.replaceFirst(Pattern.quote(expected), java.util.regex.Matcher.quoteReplacement(replacement))); return true; }); }
     @Override public CompletionStage<List<String>> glob(String pattern) { return supply(() -> { PathMatcher matcher = new PathMatcher(pattern); try (var entries = Files.walk(root)) { return entries.filter(Files::isRegularFile).map(root::relativize).map(path -> path.toString().replace(path.getFileSystem().getSeparator(), "/")).filter(matcher::matches).sorted().toList(); } }); }

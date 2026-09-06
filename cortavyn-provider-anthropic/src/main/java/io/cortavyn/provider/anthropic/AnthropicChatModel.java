@@ -154,7 +154,10 @@ public final class AnthropicChatModel implements StructuredOutputChatModel, Stre
                 }
             }
         }
-        if (!system.isEmpty()) root.put("system", system.toString());
+        if (!system.isEmpty()) {
+            if (Boolean.TRUE.equals(request.extensions().get("cortavyn.promptCache"))) root.putArray("system").addObject().put("type", "text").put("text", system.toString()).putObject("cache_control").put("type", "ephemeral");
+            else root.put("system", system.toString());
+        }
         if (messages.isEmpty()) throw new IllegalArgumentException("Anthropic requires at least one non-system message");
         try { return JSON.writeValueAsString(root); }
         catch (JsonProcessingException exception) { throw new IllegalStateException("Unable to serialize Anthropic request", exception); }

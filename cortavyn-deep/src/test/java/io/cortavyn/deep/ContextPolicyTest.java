@@ -37,6 +37,14 @@ class ContextPolicyTest {
         assertTrue(run.conversation().messages().getFirst().content().contains("Conversation summary"));
     }
 
+    @Test
+    void retriesWithASummaryAfterAProviderContextOverflow() {
+        OverflowModel model = new OverflowModel();
+        DeepRun run = DeepAgent.builder(model).tools(ChatTool.typed("noop", "noop", NoArguments.class, ignored -> CompletableFuture.completedFuture(ToolExecutionResult.success("ok")))).build().invoke("thread-3", "answer").toCompletableFuture().join();
+        assertEquals("done", run.conversation().messages().getLast().content());
+        assertEquals(1, model.summaryCalls);
+    }
+
     record NoArguments() { }
 
     private static final class ToolThenDoneModel implements ChatModel {
@@ -52,6 +60,14 @@ class ContextPolicyTest {
         private int summaryCalls;
         @Override public java.util.concurrent.CompletionStage<ChatResponse> complete(io.cortavyn.model.api.ChatRequest request) {
             if (request.tools().isEmpty()) { summaryCalls++; return CompletableFuture.completedFuture(new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, "summary"))); }
+            return CompletableFuture.completedFuture(new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, "done")));
+        }
+    }
+    private static final class OverflowModel implements ChatModel {
+        private boolean overflow = true; private int summaryCalls;
+        @Override public java.util.concurrent.CompletionStage<ChatResponse> complete(io.cortavyn.model.api.ChatRequest request) {
+            if (request.tools().isEmpty()) { summaryCalls++; return CompletableFuture.completedFuture(new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, "summary"))); }
+            if (overflow) { overflow = false; return CompletableFuture.failedStage(new IllegalStateException("context window overflow")); }
             return CompletableFuture.completedFuture(new ChatResponse(new ChatMessage(ChatMessageRole.ASSISTANT, "done")));
         }
     }
